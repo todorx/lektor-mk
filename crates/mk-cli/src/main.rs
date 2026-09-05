@@ -6,9 +6,11 @@
 //! mk check data/mk.fst --file article.txt --json
 //! ```
 
+use std::collections::BTreeMap;
 use std::io::Read;
 use std::process::ExitCode;
 
+use mk_core::morphology::Morphology;
 use mk_core::{Checker, Lexicon, Severity};
 
 const USAGE: &str = "\
@@ -16,6 +18,8 @@ mk — Macedonian spelling checker
 
 USAGE:
     mk build-lexicon <wordlist.txt>... <out.fst>
+    mk build-morph <morph.tsv> <out.morph>
+    mk analyze <morph> <word>...
     mk check <lexicon.fst> <text>
     mk check <lexicon.fst> --file <path> [--json]
     mk check <lexicon.fst> --stdin [--json]
@@ -25,6 +29,8 @@ fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let result = match args.first().map(String::as_str) {
         Some("build-lexicon") => build_lexicon(&args[1..]),
+        Some("build-morph") => build_morph(&args[1..]),
+        Some("analyze") => analyze(&args[1..]),
         Some("check") => check(&args[1..]),
         Some("-h") | Some("--help") | None => {
             print!("{USAGE}");
@@ -84,6 +90,67 @@ fn build_lexicon(args: &[String]) -> Result<bool, String> {
         raw_size as f64 / 1e6,
         raw_size as f64 / fst_size as f64
     );
+    Ok(false)
+}
+
+/// Compile the TSV produced by `tools/expand_apertium.py` into a morphology blob.
+fn build_morph(args: &[String]) -> Result<bool, String> {
+    let [input, output] = args else {
+        return Err(format!("build-morph needs an input and an output path\n\n{USAGE}"));
+    };
+
+    let text = std::fs::read_to_string(input).map_err(|e| format!("reading {input}: {e}"))?;
+    let mut entries: BTreeMap<String, Vec<(String, Vec<String>)>> = BTreeMap::new();
+    let mut rows = 0usize;
+
+    for line in text.lines() {
+        let mut cols = line.split('\t');
+        let (Some(surface), Some(lemma), Some(tags)) = (cols.next(), cols.next(), cols.next())
+        else {
+            continue;
+        };
+        if surface.is_empty() {
+            continue;
+        }
+        let tags: Vec<String> = tags.split(',').filter(|t| !t.is_empty()).map(str::to_string).collect();
+        let readings = entries.entry(surface.to_string()).or_default();
+        let reading = (lemma.to_string(), tags);
+        // The same analysis can be produced by more than one paradigm path.
+        if !readings.contains(&reading) {
+            readings.push(reading);
+        }
+        rows += 1;
+    }
+
+    let bytes = Morphology::build(&entries).map_err(|e| format!("building morphology: {e}"))?;
+    std::fs::write(output, &bytes).map_err(|e| format!("writing {output}: {e}"))?;
+
+    let m = Morphology::from_bytes(&bytes).map_err(|e| format!("verifying: {e}"))?;
+    eprintln!("read      {rows} analyses from {input}");
+    eprintln!("forms     {}", m.len());
+    eprintln!("lemmas    {}", m.lemma_count());
+    eprintln!("wrote     {output}  {:.2} MB", bytes.len() as f64 / 1e6);
+    Ok(false)
+}
+
+/// Print the morphological readings of each word given.
+fn analyze(args: &[String]) -> Result<bool, String> {
+    let Some((path, words)) = args.split_first() else {
+        return Err(format!("analyze needs a morphology file\n\n{USAGE}"));
+    };
+    let bytes = std::fs::read(path).map_err(|e| format!("reading {path}: {e}"))?;
+    let m = Morphology::from_bytes(&bytes).map_err(|e| format!("loading {path}: {e}"))?;
+
+    for word in words {
+        let readings = m.analyze(word);
+        if readings.is_empty() {
+            println!("{word}\t— непознат");
+            continue;
+        }
+        for a in readings {
+            println!("{word}\t{}\t{}", a.lemma(), a.tags().collect::<Vec<_>>().join("."));
+        }
+    }
     Ok(false)
 }
 

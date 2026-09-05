@@ -19,6 +19,7 @@ pub mod diagnostic;
 pub mod homoglyph;
 pub mod levenshtein;
 pub mod lexicon;
+pub mod morphology;
 pub mod tokenizer;
 pub mod translit;
 
