@@ -1,0 +1,94 @@
+# Curated additions to the upstream Hunspell wordlist.
+#
+# The upstream dictionary (OSSM / Taras Bendik) is a flat list of surface forms
+# with no affix rules, so it has systematic holes. This file fills the ones that
+# are *categorical* — whole classes of correct Macedonian it never covered.
+#
+# It deliberately does NOT collect individual words observed missing in some
+# corpus. That way lies overfitting to whatever text happened to be sampled.
+# General vocabulary coverage is a morphology problem, to be solved by deriving
+# paradigms from apertium-mkd, not by hand-listing forms here.
+#
+# Lines starting with '#' are comments. One form per line.
+
+# ---------------------------------------------------------------------------
+# Grave-accented forms.
+#
+# These are correct Macedonian orthography, not decoration: the accent is the
+# only thing distinguishing two different words. Written with Cyrillic
+# ѐ U+0450 and ѝ U+045D — the Latin lookalikes è U+00E8 and ì U+00EC are errors
+# and are caught by the homoglyph rule.
+# ---------------------------------------------------------------------------
+
+# сѐ "everything" vs се (reflexive clitic)
+сѐ
+Сѐ
+# ѝ "to her" (dative pronoun) vs и "and"
+ѝ
+Ѝ
+# stressed object pronouns vs their clitic forms
+нѐ
+Нѐ
+вѐ
+Вѐ
+
+# ---------------------------------------------------------------------------
+# Abbreviations.
+#
+# Written with a following full stop, which the tokenizer splits off, so only
+# the letters appear here. Single-letter abbreviations (г. в. н. ж.) need no
+# entry — the checker skips lone letters outright.
+# ---------------------------------------------------------------------------
+
+# Units of measure
+км
+мм
+см
+дм
+кг
+мг
+мл
+дл
+кв
+куб
+
+# Titles and academic ranks
+д-р
+м-р
+проф
+акад
+доц
+инж
+арх
+св
+
+# Bibliographic and editorial
+стр
+бр
+изд
+гл
+пог
+сл
+сп
+чл
+ст
+т
+тн
+итн
+пр
+сп
+
+# Address and contact
+ул
+бул
+пл
+тел
+факс
+пошт
+
+# Time and counting
+гг
+вв
+мин
+сек
+ч

@@ -1,0 +1,13 @@
+[package]
+name = "mk-core"
+description = "Macedonian spelling and grammar checking engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+# `levenshtein` gives us fuzzy lookup over the whole lexicon via an automaton
+# intersected with the FST, rather than scanning candidates one by one.
+fst = { workspace = true, features = ["levenshtein"] }
+serde = { workspace = true }

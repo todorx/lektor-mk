@@ -1,0 +1,16 @@
+[package]
+name = "mk-cli"
+description = "Command-line driver for the Macedonian checker"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "mk"
+path = "src/main.rs"
+
+[dependencies]
+mk-core = { path = "../mk-core" }
+fst = { workspace = true }
+serde_json = { workspace = true }

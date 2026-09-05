@@ -1,0 +1,13 @@
+/target
+**/*.rs.bk
+
+# Upstream sources and intermediates are reproducible via tools/prepare_wordlist.sh
+/data/raw/
+/data/interim/
+
+# Compiled lexicon — rebuilt with `mk build-lexicon`
+/data/*.fst
+
+node_modules/
+/extension/.output/
+/extension/.wxt/
