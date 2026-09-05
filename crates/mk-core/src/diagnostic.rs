@@ -25,6 +25,8 @@ pub mod rule {
     pub const FOREIGN_CYRILLIC: &str = "MK_FOREIGN_CYRILLIC";
     /// Word appears to be Macedonian typed in the Latin alphabet.
     pub const LATIN_TEXT: &str = "MK_LATIN_TEXT";
+    /// The definite article is marked on both the adjective and the noun.
+    pub const DOUBLE_DEFINITE: &str = "MK_DOUBLE_DEFINITE";
 }
 
 /// One problem found in the text.

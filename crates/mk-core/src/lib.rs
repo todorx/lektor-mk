@@ -16,6 +16,7 @@
 
 pub mod alphabet;
 pub mod diagnostic;
+pub mod grammar;
 pub mod homoglyph;
 pub mod levenshtein;
 pub mod lexicon;
@@ -42,14 +43,25 @@ const MIN_LATIN_WORD_LEN: usize = 3;
 const MAX_ACRONYM_LEN: usize = 5;
 
 /// The checker: a lexicon plus the rules that consult it.
+///
+/// Spelling needs only the lexicon. Grammar additionally needs morphology, so
+/// it is optional — a caller that only wants spell-checking pays neither the
+/// download nor the memory for the analyses.
 pub struct Checker {
     lexicon: Lexicon,
+    morphology: Option<morphology::Morphology>,
 }
 
 impl Checker {
-    /// Build a checker over a compiled FST lexicon.
+    /// Build a checker over a compiled FST lexicon. Spelling rules only.
     pub fn new(fst_bytes: Vec<u8>) -> Result<Self, fst::Error> {
-        Ok(Self { lexicon: Lexicon::from_bytes(fst_bytes)? })
+        Ok(Self { lexicon: Lexicon::from_bytes(fst_bytes)?, morphology: None })
+    }
+
+    /// Enable the grammar rules by supplying a morphology table.
+    pub fn with_morphology(mut self, morphology: morphology::Morphology) -> Self {
+        self.morphology = Some(morphology);
+        self
     }
 
     /// Borrow the underlying lexicon.
@@ -57,10 +69,16 @@ impl Checker {
         &self.lexicon
     }
 
+    /// Borrow the morphology, if the checker has one.
+    pub fn morphology(&self) -> Option<&morphology::Morphology> {
+        self.morphology.as_ref()
+    }
+
     /// Check `text` and return every problem found, in document order.
     pub fn check(&self, text: &str) -> Vec<Diagnostic> {
+        let tokens = tokenize(text);
         let words: Vec<Token<'_>> =
-            tokenize(text).into_iter().filter(|t| t.kind == TokenKind::Word).collect();
+            tokens.iter().filter(|t| t.kind == TokenKind::Word).cloned().collect();
 
         // Someone writing Macedonian on a Latin keyboard writes whole phrases
         // that way — "Zdravo, kako si". A lone Latin word inside Cyrillic text
@@ -88,6 +106,13 @@ impl Checker {
             }
         }
 
+        // Grammar needs the punctuation the spelling pass filtered out, so that
+        // a sentence boundary is not mistaken for a phrase boundary.
+        if let Some(morphology) = &self.morphology {
+            out.extend(grammar::check(&tokens, morphology));
+        }
+
+        out.sort_by_key(|d| (d.char_start, d.char_end));
         out
     }
 

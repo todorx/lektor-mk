@@ -20,8 +20,8 @@ text
   │
   ├─ [0] tokenize        Macedonian-aware: к'смет, црно-бел, д-р, 1-ви
   ├─ [1] spell           FST lexicon + Levenshtein automaton
-  ├─ [2] morphology      lemma + POS + features        (not yet built)
-  ├─ [3] grammar rules   declarative, data-driven      (not yet built)
+  ├─ [2] morphology      lemma + POS + features, from Apertium
+  ├─ [3] grammar rules   one built; declarative format still to come
   ▼
 diagnostics → underlines in the page
 ```
@@ -65,17 +65,41 @@ cargo run --release -p mk-cli -- build-lexicon \
     data/interim/mk_wordlist.utf8.txt \
     data/supplement/mk_supplement.txt \
     data/mk.fst                                                  # compile the lexicon
+tools/expand_apertium.py \
+    data/raw/apertium-mkd/apertium-mkd.mkd.dix \
+    data/interim/mk_morph.tsv                                    # expand paradigms
+cargo run --release -p mk-cli -- build-morph \
+    data/interim/mk_morph.tsv data/mk.morph                      # compile morphology
 cargo test                                                       # run the suite
+
+# spelling only
 cargo run --release -p mk-cli -- check data/mk.fst "Тој ја видe книгата."
+# with grammar
+cargo run --release -p mk-cli -- check data/mk.fst --morph data/mk.morph \
+    "Убавата книгата е на масата."
+# inspect a word's analyses
+cargo run --release -p mk-cli -- analyze data/mk.morph книгата дошла
 ```
 
 ## Measured
 
 | | |
 |---|---|
-| Lexicon | 261,500 forms → **0.48 MB** FST (11× smaller than the raw list) |
-| Throughput | 17,782 words in **0.95 s**; 40 words in 0.5 ms |
-| Flag rate on Macedonian Wikipedia | 6.46% |
+| Lexicon | 357,040 forms → **0.69 MB** FST (13× smaller than the raw list) |
+| Morphology | 161,953 forms, 30,380 lemmas → **2.47 MB** |
+| Throughput | 17,782 words in **0.95 s** |
+| Flag rate on Macedonian Wikipedia | 5.06%, down from 7.85% |
+| Morphology coverage | 83.5% of tokens; 70.6% of adjacent pairs |
+| `MK_DOUBLE_DEFINITE` false positives | **0** in 17,782 words of edited prose |
+
+That last row is the number the project lives or dies by. The rule catches
+`убавата книгата`, `Големиот градот` and `Новата куќата` while staying silent on
+`убавата книга`, `убава книгата` and `Големиот град` — and never once misfired
+across a whole corpus of edited Wikipedia text.
+
+The 70.6% adjacent-pair figure is the recall ceiling for any rule that inspects
+a bigram: a rule cannot judge a pair it cannot analyse. That is a coverage
+limit, not a precision problem, and it improves as the morphology does.
 
 The flag rate is not an error rate — it is dominated by two known gaps, measured
 over 17,782 words of Wikipedia:
@@ -101,6 +125,7 @@ invisible to a reader.
 | `MK_HOMOGLYPH` | Latin `a c e o p s x y` hiding inside Cyrillic words |
 | `MK_FOREIGN_CYRILLIC` | Serbian `ђ ћ`, Russian `ъ ы э я ю`, Bulgarian `щ` |
 | `MK_LATIN_TEXT` | Macedonian typed in Latin letters, converted back |
+| `MK_DOUBLE_DEFINITE` | The definite article marked twice: `убавата книгата` |
 
 The two script rules matter more than they look. Latin `а е о с р х у` are pixel
 twins of their Cyrillic counterparts, so contaminated text looks perfect to a
@@ -112,8 +137,7 @@ which is what keeps false positives near zero.
 
 These are the checks no generic tool can do, and the reason the project exists:
 
-- **Definite article placement** — the article attaches to the first element of
-  the noun phrase: `убавата книга` ✓, `убава книгата` ✗, `убавата книгата` ✗
+- ~~**Definite article placement**~~ — built, see `MK_DOUBLE_DEFINITE` above
 - **Object reduplication** — definite objects require a resumptive clitic:
   `Ја видов Марија` ✓
 - **Clitic order** — dative before accusative: `ми го даде` ✓, `го ми даде` ✗

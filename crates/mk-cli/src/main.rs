@@ -23,7 +23,12 @@ USAGE:
     mk check <lexicon.fst> <text>
     mk check <lexicon.fst> --file <path> [--json]
     mk check <lexicon.fst> --stdin [--json]
+
+Add --morph <mk.morph> to any check to enable the grammar rules.
 ";
+
+/// Flags that consume the argument after them.
+const FLAGS_WITH_VALUES: &[&str] = &["--file", "--morph"];
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -169,7 +174,23 @@ fn check(args: &[String]) -> Result<bool, String> {
         std::io::stdin().read_to_string(&mut buf).map_err(|e| format!("reading stdin: {e}"))?;
         buf
     } else {
-        rest.iter().filter(|a| !a.starts_with("--")).cloned().collect::<Vec<_>>().join(" ")
+        // Skip flags, and skip the value belonging to a flag that takes one —
+        // otherwise `check lex.fst "текст" --morph mk.morph` would try to
+        // spell-check the path.
+        let mut words = Vec::new();
+        let mut skip_next = false;
+        for arg in rest {
+            if skip_next {
+                skip_next = false;
+                continue;
+            }
+            if arg.starts_with("--") {
+                skip_next = FLAGS_WITH_VALUES.contains(&arg.as_str());
+                continue;
+            }
+            words.push(arg.clone());
+        }
+        words.join(" ")
     };
 
     if text.trim().is_empty() {
@@ -177,7 +198,16 @@ fn check(args: &[String]) -> Result<bool, String> {
     }
 
     let bytes = std::fs::read(fst_path).map_err(|e| format!("reading {fst_path}: {e}"))?;
-    let checker = Checker::new(bytes).map_err(|e| format!("loading lexicon: {e}"))?;
+    let mut checker = Checker::new(bytes).map_err(|e| format!("loading lexicon: {e}"))?;
+
+    // Grammar rules are opt-in: they need the morphology table, which is a
+    // separate and much larger download than the spelling lexicon.
+    if let Some(pos) = rest.iter().position(|a| a == "--morph") {
+        let path = rest.get(pos + 1).ok_or("--morph needs a path")?;
+        let raw = std::fs::read(path).map_err(|e| format!("reading {path}: {e}"))?;
+        let morph = Morphology::from_bytes(&raw).map_err(|e| format!("loading {path}: {e}"))?;
+        checker = checker.with_morphology(morph);
+    }
 
     let started = std::time::Instant::now();
     let found = checker.check(&text);
