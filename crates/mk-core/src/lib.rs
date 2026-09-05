@@ -58,17 +58,31 @@ impl Checker {
 
     /// Check `text` and return every problem found, in document order.
     pub fn check(&self, text: &str) -> Vec<Diagnostic> {
-        let mut out = Vec::new();
+        let words: Vec<Token<'_>> =
+            tokenize(text).into_iter().filter(|t| t.kind == TokenKind::Word).collect();
 
-        for token in tokenize(text) {
-            if token.kind != TokenKind::Word {
-                continue;
-            }
+        // Someone writing Macedonian on a Latin keyboard writes whole phrases
+        // that way — "Zdravo, kako si". A lone Latin word inside Cyrillic text
+        // is nearly always a foreign name or a citation, and converting it
+        // would be wrong. So the transliteration rule only fires on a run of
+        // two or more adjacent Latin words.
+        let latin: Vec<bool> = words.iter().map(|t| is_all_latin(t.text)).collect();
+        let in_latin_run: Vec<bool> = (0..words.len())
+            .map(|i| {
+                latin[i]
+                    && (i > 0 && latin[i - 1] || i + 1 < latin.len() && latin[i + 1])
+            })
+            .collect();
+
+        let mut out = Vec::new();
+        for (i, token) in words.iter().enumerate() {
             // Suffixed ordinals and codes (`1-ви`, `А4`) are not lexicon entries.
             if token.text.chars().any(|c| c.is_numeric()) {
                 continue;
             }
-            if let Some(d) = self.check_word(token.text, token.char_start, token.char_end) {
+            if let Some(d) =
+                self.check_word(token.text, token.char_start, token.char_end, in_latin_run[i])
+            {
                 out.push(d);
             }
         }
@@ -76,7 +90,13 @@ impl Checker {
         out
     }
 
-    fn check_word(&self, word: &str, start: usize, end: usize) -> Option<Diagnostic> {
+    fn check_word(
+        &self,
+        word: &str,
+        start: usize,
+        end: usize,
+        in_latin_run: bool,
+    ) -> Option<Diagnostic> {
         // 1. Characters that are not Macedonian at all.
         if let Some(issue) = homoglyph::analyze(word) {
             let repaired_is_a_word = self.lexicon.contains(&issue.normalized);
@@ -110,6 +130,15 @@ impl Checker {
         // 2. Macedonian written in Latin letters.
         if is_all_latin(word) {
             if word.chars().count() < MIN_LATIN_WORD_LEN {
+                return None;
+            }
+            // BBC, CNN, ISDN, and Roman numerals like XIV transliterate into
+            // plausible-looking nonsense (Ббц, Цнн, Хив). They are not words.
+            if is_acronym(word) {
+                return None;
+            }
+            // An isolated Latin word among Cyrillic is a name or a citation.
+            if !in_latin_run {
                 return None;
             }
             let readings: Vec<String> = translit::candidates(word)
@@ -201,7 +230,7 @@ mod tests {
         let words = [
             "македонски", "книга", "книгата", "книги", "коњ", "коњот", "здраво", "жена", "човек",
             "ѓавол", "ѓубре", "скопје", "цел", "црно", "бел", "тој", "оди", "дома", "ја", "виде",
-            "и", "во",
+            "и", "во", "како", "денес", "убав", "многу",
         ];
         Checker::new(Lexicon::build_from_unsorted(words).unwrap()).unwrap()
     }
@@ -242,24 +271,37 @@ mod tests {
 
     #[test]
     fn offers_cyrillic_for_latin_typed_macedonian() {
-        let found = checker().check("zdravo");
-        assert_eq!(found.len(), 1);
-        assert_eq!(found[0].rule, rule::LATIN_TEXT);
+        let found = checker().check("zdravo kako si denes");
+        assert!(!found.is_empty());
+        assert!(found.iter().all(|d| d.rule == rule::LATIN_TEXT), "{found:?}");
         assert!(found[0].suggestions.contains(&"здраво".to_string()));
     }
 
     #[test]
     fn ambiguous_transliteration_is_resolved_by_the_lexicon() {
         // `konj` could read коњ or конј; only коњ is a word.
-        let found = checker().check("konj");
+        let found = checker().check("konj konj");
         assert_eq!(found[0].suggestions, vec!["коњ".to_string()]);
+    }
+
+    #[test]
+    fn an_isolated_latin_word_among_cyrillic_is_a_name_not_a_typo() {
+        // "Ohrid" in Macedonian prose is a citation or a foreign rendering,
+        // not someone typing Охрид on a Latin keyboard.
+        assert!(checker().check("Тој оди во Skopje дома").is_empty());
+    }
+
+    #[test]
+    fn acronyms_are_not_transliterated() {
+        // Without this, BBC becomes "Ббц" and XIV becomes "Хив".
+        assert!(checker().check("BBC CNN").is_empty());
+        assert!(checker().check("XIV III").is_empty());
     }
 
     #[test]
     fn genuine_foreign_words_are_left_alone() {
         // No reading of these is a Macedonian word, so we stay quiet.
-        assert!(checker().check("Wikipedia").is_empty());
-        assert!(checker().check("github").is_empty());
+        assert!(checker().check("Wikipedia github").is_empty());
     }
 
     #[test]
@@ -290,7 +332,10 @@ mod tests {
 
     #[test]
     fn several_problems_are_reported_in_document_order() {
-        let got = rules("zdravo, мaкeдoнски книгаа");
-        assert_eq!(got, vec![rule::LATIN_TEXT, rule::HOMOGLYPH, rule::SPELL]);
+        let got = rules("zdravo kako, мaкeдoнски книгаа");
+        assert_eq!(
+            got,
+            vec![rule::LATIN_TEXT, rule::LATIN_TEXT, rule::HOMOGLYPH, rule::SPELL]
+        );
     }
 }
