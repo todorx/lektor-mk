@@ -40,6 +40,7 @@ pub fn check(
     ne_fused(tokens, morph, &mut out);
     naj_separated(tokens, lexicon, morph, &mut out);
     sentence_capital(tokens, lexicon, &mut out);
+    po_separated(tokens, lexicon, morph, &mut out);
     out
 }
 
@@ -319,6 +320,47 @@ fn naj_separated(
     }
 }
 
+fn po_separated(
+    tokens: &[Token<'_>],
+    lexicon: &crate::lexicon::Lexicon,
+    morph: &Morphology,
+    out: &mut Vec<Diagnostic>,
+) {
+    for pair in tokens.windows(2) {
+        let (first, second) = (&pair[0], &pair[1]);
+        if first.kind != TokenKind::Word || second.kind != TokenKind::Word {
+            continue;
+        }
+        if first.text.to_lowercase() != "по" {
+            continue;
+        }
+        let ok_pos = morph.analyze(second.text).iter().any(|a| {
+            matches!(a.pos(), Some(Pos::Adjective | Pos::Noun | Pos::Verb))
+        });
+        if !ok_pos {
+            continue;
+        }
+        let fused = format!("по{}", second.text.to_lowercase());
+        if !lexicon.contains(&fused) && morph.analyze(&fused).is_empty() {
+            continue;
+        }
+        let fix = if first.text.starts_with(char::is_uppercase) {
+            capitalize_first(&fused)
+        } else {
+            fused
+        };
+        out.push(Diagnostic {
+            rule: rule::PO_SEPARATED.to_string(),
+            severity: Severity::Error,
+            char_start: first.char_start,
+            char_end: second.char_end,
+            text: format!("{} {}", first.text, second.text),
+            message: "По се пишува слеано со зборот што го степенува.".to_string(),
+            suggestions: vec![fix],
+        });
+    }
+}
+
 fn sentence_capital(
     tokens: &[Token<'_>],
     lexicon: &crate::lexicon::Lexicon,
@@ -540,6 +582,8 @@ mod tests {
         add("погоди", "погоди", &["vblex", "perf", "tv", "aor", "p3", "sg"]);
         add("добар", "добар", &["adj", "m", "sg", "nom", "ind"]);
         add("најдобар", "добар", &["pref", "sup", "adj", "m", "sg", "nom", "ind"]);
+        add("подобар", "добар", &["pref", "comp", "adj", "m", "sg", "nom", "ind"]);
+        add("пат", "пат", &["n", "m", "sg", "nom", "ind"]);
         Morphology::from_bytes(&Morphology::build(&e).unwrap()).unwrap()
     }
 
@@ -551,7 +595,7 @@ mod tests {
                     "тој", "таа", "тоа", "тие", "ми", "го", "ја", "им", "даде", "остави",
                     "дошол", "дошла", "дошле", "водел", "водела", "убавата", "книгата",
                     "книга", "и", "ѝ", "не", "сака", "пријател", "мој", "добар",
-                    "непријател", "нестане", "најдобар", "утре",
+                    "непријател", "нестане", "најдобар", "подобар", "утре",
                 ]
                 .into_iter(),
             )
@@ -760,6 +804,19 @@ mod tests {
         assert_eq!(found.len(), 1, "{found:?}");
         assert_eq!(found[0].rule, rule::L_PARTICIPLE);
         assert!(found[0].suggestions.is_empty(), "{:?}", found[0].suggestions);
+    }
+
+    #[test]
+    fn flags_po_split_from_an_adjective() {
+        let found = run("Тој е по добар");
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].rule, rule::PO_SEPARATED);
+        assert_eq!(found[0].suggestions, vec!["подобар".to_string()]);
+    }
+
+    #[test]
+    fn po_before_a_plain_noun_stays_silent() {
+        assert!(run("Тој оди по пат").is_empty());
     }
 
     #[test]

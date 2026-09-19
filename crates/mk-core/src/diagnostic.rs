@@ -39,6 +39,8 @@ pub mod rule {
     pub const NAJ_SEPARATED: &str = "MK_NAJ_SEPARATED";
     /// First word of a sentence starts lowercase: `Тој дојде. утре` ✗.
     pub const SENTENCE_CAPITAL: &str = "MK_SENTENCE_CAPITAL";
+    /// `по` split from its comparative: `по добар` ✗, `подобар` ✓.
+    pub const PO_SEPARATED: &str = "MK_PO_SEPARATED";
 }
 
 /// One problem found in the text.
