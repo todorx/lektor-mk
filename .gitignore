@@ -17,3 +17,5 @@ node_modules/
 /extension/mk.morph
 /extension/mk.freq
 /tools/bin/
+
+.worktrees/
