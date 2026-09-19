@@ -109,7 +109,7 @@ cargo run --release -p mk-cli -- analyze data/mk.morph книгата дошла
 | Throughput | 17,782 words in **0.95 s** |
 | Flag rate on Macedonian Wikipedia | 5.13% over 17,105 words (live sample; was 5.06%) |
 | Morphology coverage | 83.5% of tokens; 70.6% of adjacent pairs |
-| Grammar on Wikipedia | 4 `MK_L_PARTICIPLE` hits, 0 everything else — no clear false positives after the negation/object guards |
+| Grammar on Wikipedia | 4 `MK_L_PARTICIPLE` + 3 `MK_SPACE_BEFORE_PUNCT` hits (all verified true), 0 everywhere else |
 | `MK_DOUBLE_DEFINITE` false positives | **0** in 17,782 words of edited prose |
 
 That last row is the number the project lives or dies by. The rule catches
