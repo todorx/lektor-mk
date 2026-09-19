@@ -128,7 +128,10 @@ fn clitic_order(tokens: &[Token<'_>], morph: &Morphology, out: &mut Vec<Diagnost
         }
         let is_acc = |a: &Analysis<'_>| a.pos() == Some(Pos::Pronoun) && a.has("acc");
         let is_dat = |a: &Analysis<'_>| a.pos() == Some(Pos::Pronoun) && a.has("dat");
-        if !acc.iter().any(is_acc) || acc.iter().any(|a| a.pos() == Some(Pos::Verb)) {
+        // The first word must be unambiguously pronominal: не reads as an
+        // accusative clitic but is usually the negation particle, and swapping
+        // it ("им не остави") invents ungrammatical text.
+        if !acc.iter().any(is_acc) || acc.iter().any(|a| a.pos() != Some(Pos::Pronoun)) {
             continue;
         }
         if !dat.iter().any(is_dat) {
@@ -215,7 +218,9 @@ fn l_participle(tokens: &[Token<'_>], morph: &Morphology, out: &mut Vec<Diagnost
         }
         let subj_forms: Vec<(Gender, Number)> = subj_readings
             .iter()
-            .filter(|a| a.pos() == Some(Pos::Pronoun))
+            // Nominative only: го/ја/ги/и/не are objects or particles that
+            // happen to read as pronouns — never the subject.
+            .filter(|a| a.pos() == Some(Pos::Pronoun) && a.has("nom"))
             .filter_map(|a| Some((a.gender()?, a.number()?)))
             .collect();
         let part_forms: Vec<(Gender, Number, &str)> = part_readings
@@ -233,11 +238,20 @@ fn l_participle(tokens: &[Token<'_>], morph: &Morphology, out: &mut Vec<Diagnost
             continue;
         }
         let (sg, sn) = subj_forms[0];
+        // Suggest only when the participle is one lexeme: била reads as бие
+        // and е, and picking a paradigm blind proposes the wrong verb.
+        let mut lp_lemmas: Vec<&str> = part_forms.iter().map(|(_, _, l)| *l).collect();
+        lp_lemmas.sort_unstable();
+        lp_lemmas.dedup();
         let lemma = part_forms[0].2.to_string();
         // The agreeing surface form, when one is stored (never invented).
-        let fix = best_participle_form(morph, &lemma, sg, sn)
-            .map(|f| vec![format!("{} {}", subj.text, f)])
-            .unwrap_or_default();
+        let fix = if lp_lemmas.len() == 1 {
+            best_participle_form(morph, &lemma, sg, sn)
+                .map(|f| vec![format!("{} {}", subj.text, f)])
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        };
         out.push(Diagnostic {
             rule: rule::L_PARTICIPLE.to_string(),
             severity: Severity::Error,
@@ -329,10 +343,17 @@ mod tests {
         // clitics: dative before accusative (ми го), verb, subject pronouns
         add("ми", "ми", &["prn", "pers", "clt", "p1", "mfn", "sg", "dat"]);
         add("го", "clitic", &["prn", "pers", "clt", "p3", "m", "sg", "acc"]);
+        add("ја", "clitic", &["prn", "pers", "clt", "p3", "f", "sg", "acc"]);
         add("даде", "даде", &["vblex", "perf", "tv", "aor", "p3", "sg"]);
         add("таа", "таа", &["prn", "pers", "p3", "f", "sg", "nom"]);
         add("тој", "тој", &["prn", "pers", "p3", "m", "sg", "nom"]);
         add("тоа", "тоа", &["prn", "pers", "p3", "nt", "sg", "nom"]);
+        add("не", "не", &["adv"]);
+        add("не", "clitic", &["prn", "pers", "clt", "p1", "mfn", "pl", "acc"]);
+        add("им", "clitic", &["prn", "pers", "clt", "p3", "mfn", "pl", "dat"]);
+        add("остави", "остави", &["vblex", "perf", "tv", "aor", "p3", "sg"]);
+        add("водел", "воде", &["vblex", "impf", "lp", "m", "sg"]);
+        add("водела", "воде", &["vblex", "impf", "lp", "f", "sg"]);
         add("тие", "free", &["prn", "pers", "p3", "mfn", "pl", "nom"]);
         add("дошол", "дојде", &["vblex", "perf", "lp", "m", "sg"]);
         add("дошла", "дојде", &["vblex", "perf", "lp", "f", "sg"]);
@@ -427,6 +448,20 @@ mod tests {
     fn clitic_order_stays_silent_without_a_verb() {
         // No verb after the pair — not enough context to judge.
         assert!(run("тој го ми").is_empty());
+    }
+
+    #[test]
+    fn clitic_order_ignores_the_negation_particle() {
+        // не is negation here, not an accusative clitic — must stay silent,
+        // and must never propose the ungrammatical swap "им не остави".
+        assert!(run("не им остави").is_empty());
+    }
+
+    #[test]
+    fn participle_ignores_object_clitics_as_subjects() {
+        // го/ја/и are objects (accusative/dative), never subjects.
+        assert!(run("го водела").is_empty());
+        assert!(run("ја водела").is_empty());
     }
 
     #[test]

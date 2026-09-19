@@ -7,7 +7,13 @@
 
 # Compiled lexicon — rebuilt with `mk build-lexicon`
 /data/*.fst
+/data/*.freq
 
 node_modules/
 /extension/.output/
 /extension/.wxt/
+/extension/mk_pkg/
+/extension/mk.fst
+/extension/mk.morph
+/extension/mk.freq
+/tools/bin/

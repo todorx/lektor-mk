@@ -50,10 +50,23 @@ require scanning candidates one by one.
 ```
 crates/mk-core/     the engine — tokenizer, lexicon, homoglyph, transliteration
 crates/mk-cli/      command-line driver, used for testing and for building the FST
+crates/mk-wasm/     WebAssembly bridge (JSON in/out) for the Firefox extension
+extension/          Firefox extension (MV2, local-only WASM checker)
 tools/              data preparation
 data/               dictionary sources and the compiled lexicon (git-ignored)
-extension/          browser extension (not yet built)
 ```
+
+## Firefox extension
+
+```bash
+python tools/build_extension.py   # wasm + glue + data/mk.fst + data/mk.morph
+```
+
+Then load it in Firefox via `about:debugging` → This Firefox →
+Load Temporary Add-on → `extension/manifest.json`. The checker runs
+entirely on-device: text fields get Harper-style inline wavy underlines
+as you type (click one for fixes), and the toolbar popup checks
+pasted text.
 
 ## Build
 
@@ -61,13 +74,17 @@ Requires Rust and a C linker (`sudo dnf install -y gcc glibc-devel` on Fedora).
 
 ```bash
 tools/prepare_wordlist.sh                                        # fetch + transcode
+tools/expand_apertium.py \
+    data/raw/apertium-mkd/apertium-mkd.mkd.dix \
+    data/interim/mk_morph.tsv \
+    data/interim/mk_apertium_forms.txt                           # expand paradigms
+python tools/build_gazetteer.py                                  # proper-noun gazetteer
 cargo run --release -p mk-cli -- build-lexicon \
     data/interim/mk_wordlist.utf8.txt \
     data/supplement/mk_supplement.txt \
+    data/supplement/mk_names.txt \
+    data/interim/mk_apertium_forms.txt \
     data/mk.fst                                                  # compile the lexicon
-tools/expand_apertium.py \
-    data/raw/apertium-mkd/apertium-mkd.mkd.dix \
-    data/interim/mk_morph.tsv                                    # expand paradigms
 cargo run --release -p mk-cli -- build-morph \
     data/interim/mk_morph.tsv data/mk.morph                      # compile morphology
 cargo test                                                       # run the suite
@@ -85,11 +102,14 @@ cargo run --release -p mk-cli -- analyze data/mk.morph книгата дошла
 
 | | |
 |---|---|
-| Lexicon | 357,040 forms → **0.69 MB** FST (13× smaller than the raw list) |
-| Morphology | 161,953 forms, 30,380 lemmas → **2.47 MB** |
+| Lexicon | 357,191 forms → **0.69 MB** FST (13× smaller than the raw list) |
+| Morphology | 161,953 forms, 30,380 lemmas → **2.65 MB** (incl. participle reverse index) |
+| Frequencies | 40,000 words ex Macedonian Wikipedia → **0.86 MB** (`mk.freq`, optional) |
+| Extension total | FST + morph + freq → **4.0 MB**, still local-only and offline |
 | Throughput | 17,782 words in **0.95 s** |
-| Flag rate on Macedonian Wikipedia | 5.06%, down from 7.85% |
+| Flag rate on Macedonian Wikipedia | 5.13% over 17,105 words (live sample; was 5.06%) |
 | Morphology coverage | 83.5% of tokens; 70.6% of adjacent pairs |
+| Grammar on Wikipedia | 4 `MK_L_PARTICIPLE` hits, 0 `MK_DOUBLE_DEFINITE` / `MK_CLITIC_ORDER` — no clear false positives after the negation/object guards |
 | `MK_DOUBLE_DEFINITE` false positives | **0** in 17,782 words of edited prose |
 
 That last row is the number the project lives or dies by. The rule catches
@@ -126,6 +146,13 @@ invisible to a reader.
 | `MK_FOREIGN_CYRILLIC` | Serbian `ђ ћ`, Russian `ъ ы э я ю`, Bulgarian `щ` |
 | `MK_LATIN_TEXT` | Macedonian typed in Latin letters, converted back |
 | `MK_DOUBLE_DEFINITE` | The definite article marked twice: `убавата книгата` |
+| `MK_CLITIC_ORDER` | Dative before accusative: `ми го даде` ✓, `го ми даде` ✗ |
+| `MK_DATIVE_I` | Bare `и` where the dative clitic `ѝ` belongs |
+| `MK_L_PARTICIPLE` | л-participle disagreeing with its subject: `таа дошол` ✗ |
+
+Suggestions are frequency-ranked (Wikipedia counts) with Macedonian
+confusion costs (`к/ќ`, `е/ѐ`), falling back to edit-distance order when
+no frequency table is loaded.
 
 The two script rules matter more than they look. Latin `а е о с р х у` are pixel
 twins of their Cyrillic counterparts, so contaminated text looks perfect to a
@@ -138,12 +165,14 @@ which is what keeps false positives near zero.
 These are the checks no generic tool can do, and the reason the project exists:
 
 - ~~**Definite article placement**~~ — built, see `MK_DOUBLE_DEFINITE` above
+- ~~**Clitic order**~~ — built (`MK_CLITIC_ORDER`): dative before accusative
+- ~~**`ѝ` vs `и`**~~ — built (`MK_DATIVE_I`): dative clitic against the conjunction
+- ~~**л-participle agreement**~~ — built (`MK_L_PARTICIPLE`): `тој дошол` / `таа дошла`
 - **Object reduplication** — definite objects require a resumptive clitic:
   `Ја видов Марија` ✓
-- **Clitic order** — dative before accusative: `ми го даде` ✓, `го ми даде` ✗
-- **`ѝ` vs `и`** — dative clitic against the conjunction
-- **л-participle agreement** — `тој дошол` / `таа дошла` / `тие дошле`
 - **Numeral forms** — `два стола` not `два столови`; `двајца студенти`
+  (blocked: the morphology has zero `ct` count-form rows, so the rule cannot
+  meet the precision gate yet)
 - **Serbianisms** — a style layer for Serbian-influenced constructions
 
 Rules will be declarative data, not Rust, so that someone who knows Macedonian
@@ -159,6 +188,8 @@ proofreader that cries wolf gets switched off.
 | [apertium-mkd-bul](https://github.com/apertium/apertium-mkd-bul) | Morphological analysis (planned) | GPL |
 | [spaCy `mk_core_news_*`](https://spacy.io/models/mk) | Build-time tagging (planned) | MIT |
 | [UD_Macedonian-MTB](https://universaldependencies.org/treebanks/mk_mtb/index.html) | Evaluation only — 155 sentences | CC BY-SA 4.0 |
+| MK Wikipedia article dump (`mkwiki-latest-pages-articles`) | Word-frequency counts only (`mk_freq.tsv`, top 40k ship in `mk.freq`) | CC BY-SA 4.0 (counts ship, text never ships) |
+| MK Wikipedia title dump (`mkwiki-latest-all-titles-in-ns0`) | Proper-noun gazetteer (`mk_names.txt`), reviewed before commit | CC BY-SA 4.0 |
 
 The base dictionary is GPL-2.0, so this project is **GPL-3.0-or-later**.
 
