@@ -33,6 +33,10 @@ pub mod rule {
     pub const DATIVE_I: &str = "MK_DATIVE_I";
     /// An л-participle disagreeing with its subject: `таа дошол` ✗.
     pub const L_PARTICIPLE: &str = "MK_L_PARTICIPLE";
+    /// `не` fused to a finite verb: `несака` ✗, `не сака` ✓.
+    pub const NE_FUSED: &str = "MK_NE_FUSED";
+    /// `нај` split from its adjective: `нај добар` ✗, `најдобар` ✓.
+    pub const NAJ_SEPARATED: &str = "MK_NAJ_SEPARATED";
 }
 
 /// One problem found in the text.

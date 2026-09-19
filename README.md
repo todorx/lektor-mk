@@ -109,7 +109,7 @@ cargo run --release -p mk-cli -- analyze data/mk.morph книгата дошла
 | Throughput | 17,782 words in **0.95 s** |
 | Flag rate on Macedonian Wikipedia | 5.13% over 17,105 words (live sample; was 5.06%) |
 | Morphology coverage | 83.5% of tokens; 70.6% of adjacent pairs |
-| Grammar on Wikipedia | 4 `MK_L_PARTICIPLE` hits, 0 `MK_DOUBLE_DEFINITE` / `MK_CLITIC_ORDER` — no clear false positives after the negation/object guards |
+| Grammar on Wikipedia | 4 `MK_L_PARTICIPLE` hits, 0 everything else — no clear false positives after the negation/object guards |
 | `MK_DOUBLE_DEFINITE` false positives | **0** in 17,782 words of edited prose |
 
 That last row is the number the project lives or dies by. The rule catches
@@ -149,6 +149,8 @@ invisible to a reader.
 | `MK_CLITIC_ORDER` | Dative before accusative: `ми го даде` ✓, `го ми даде` ✗ |
 | `MK_DATIVE_I` | Bare `и` where the dative clitic `ѝ` belongs |
 | `MK_L_PARTICIPLE` | л-participle disagreeing with its subject: `таа дошол` ✗ |
+| `MK_NE_FUSED` | `не` fused to a finite verb: `несака` ✗, `не сака` ✓ |
+| `MK_NAJ_SEPARATED` | `нај` split from its word: `нај добар` ✗, `најдобар` ✓ |
 
 Suggestions are frequency-ranked (Wikipedia counts) with Macedonian
 confusion costs (`к/ќ`, `е/ѐ`), falling back to edit-distance order when
@@ -168,6 +170,10 @@ These are the checks no generic tool can do, and the reason the project exists:
 - ~~**Clitic order**~~ — built (`MK_CLITIC_ORDER`): dative before accusative
 - ~~**`ѝ` vs `и`**~~ — built (`MK_DATIVE_I`): dative clitic against the conjunction
 - ~~**л-participle agreement**~~ — built (`MK_L_PARTICIPLE`): `тој дошол` / `таа дошла`
+- ~~**Separated `не`**~~ — built (`MK_NE_FUSED`): negation stays separate from
+  finite verbs, except lexicalized fusions (`нестане`, `непогоди`)
+- ~~**Fused `нај`**~~ — built (`MK_NAJ_SEPARATED`): superlative particle fuses
+  with the graded word, verified against known vocabulary
 - **Object reduplication** — definite objects require a resumptive clitic:
   `Ја видов Марија` ✓
 - **Numeral forms** — `два стола` not `два столови`; `двајца студенти`

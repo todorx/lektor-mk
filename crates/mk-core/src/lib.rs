@@ -127,7 +127,7 @@ impl Checker {
         // Grammar needs the punctuation the spelling pass filtered out, so that
         // a sentence boundary is not mistaken for a phrase boundary.
         if let Some(morphology) = &self.morphology {
-            out.extend(grammar::check(&tokens, morphology));
+            out.extend(grammar::check(&tokens, &self.lexicon, morphology));
         }
 
         out.sort_by_key(|d| (d.char_start, d.char_end));
@@ -221,6 +221,11 @@ impl Checker {
         // reporting. On Macedonian Wikipedia these accounted for one in eight
         // of all spelling hits, every one of them a false positive.
         if word.chars().count() == 1 {
+            return None;
+        }
+        // Bare `нај` is never correct standalone; the grammar rule covers the
+        // `нај добар` pair, and spelling suggestions for it are pure noise.
+        if word.to_lowercase() == "нај" {
             return None;
         }
 
@@ -404,6 +409,13 @@ mod tests {
     #[test]
     fn acronyms_are_not_reported() {
         assert!(checker().check("МПЦ и ДДВ").is_empty());
+    }
+
+    #[test]
+    fn bare_naj_is_left_to_the_grammar_rule() {
+        // Standalone нај is always wrong, but spelling suggestions for it
+        // are noise; MK_NAJ_SEPARATED owns the pair.
+        assert!(checker().check("нај").is_empty());
     }
 
     #[test]

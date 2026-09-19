@@ -27,12 +27,18 @@ use crate::morphology::{Analysis, Gender, Morphology, Number, Pos};
 use crate::tokenizer::{Token, TokenKind};
 
 /// Run every grammar rule over `tokens`.
-pub fn check(tokens: &[Token<'_>], morph: &Morphology) -> Vec<Diagnostic> {
+pub fn check(
+    tokens: &[Token<'_>],
+    lexicon: &crate::lexicon::Lexicon,
+    morph: &Morphology,
+) -> Vec<Diagnostic> {
     let mut out = Vec::new();
     double_definite_article(tokens, morph, &mut out);
     clitic_order(tokens, morph, &mut out);
     dative_i(tokens, morph, &mut out);
     l_participle(tokens, morph, &mut out);
+    ne_fused(tokens, morph, &mut out);
+    naj_separated(tokens, lexicon, morph, &mut out);
     out
 }
 
@@ -199,6 +205,128 @@ fn dative_i(tokens: &[Token<'_>], morph: &Morphology, out: &mut Vec<Diagnostic>)
     }
 }
 
+/// `не` stays separate from finite verbs: `не сака` ✓, `несака` ✗ (§189).
+///
+/// Precision guards (all must pass):
+/// - the whole word has no morphological analysis — established words
+///   (`негодува`, `недели`) always win;
+/// - lexicalized/ambiguous fusions are excepted (`нестан-` = vanish, but
+///   also `не стане`; `непогод-` = disasters, but also `не погоди`);
+/// - the stem reads ONLY as a verb (a noun/adjective reading like
+///   `прав` in `неправ` vetoes);
+/// - the stem has a present, imperative or imperfect reading — aorist-only
+///   stems (`објаснив`) double as `-ив` adjectives (`необјаснив`);
+/// - gerunds (`несакајќи`, `pprs`) and participles (`ненапишан`, `pp`,
+///   л-participles) take `не-` fused (§187).
+///
+/// Deliberately ignores the spelling lexicon: the upstream wordlist is
+/// polluted with fused typos (`несака`), so membership proves nothing.
+fn ne_fused(
+    tokens: &[Token<'_>],
+    morph: &Morphology,
+    out: &mut Vec<Diagnostic>,
+) {
+    /// Fused stems whose correct reading collides with negation.
+    const EXCEPTED: &[&str] = &["нестан", "непогод"];
+    for t in tokens.iter().filter(|t| t.kind == TokenKind::Word) {
+        let lower = t.text.to_lowercase();
+        let Some(stem) = lower.strip_prefix("не") else {
+            continue;
+        };
+        if stem.chars().count() < 2 {
+            continue;
+        }
+        if !morph.analyze(t.text).is_empty() {
+            continue;
+        }
+        if EXCEPTED.iter().any(|e| lower.starts_with(e)) {
+            continue;
+        }
+        let readings = morph.analyze(stem);
+        if readings.is_empty()
+            || readings.iter().any(|a| {
+                !matches!(a.pos(), None | Some(Pos::Verb) | Some(Pos::Particle))
+            })
+        {
+            continue;
+        }
+        let finite = readings.iter().any(|a| {
+            a.pos() == Some(Pos::Verb)
+                && (a.has("pres") || a.has("imp") || a.has("impf"))
+                && !a.has("pp")
+                && !a.has("pprs")
+                && !a.is_l_participle()
+        });
+        if !finite {
+            continue;
+        }
+        let cut = t.text.char_indices().nth(2).map(|(i, _)| i).unwrap_or(t.text.len());
+        out.push(Diagnostic {
+            rule: rule::NE_FUSED.to_string(),
+            severity: Severity::Error,
+            char_start: t.char_start,
+            char_end: t.char_end,
+            text: t.text.to_string(),
+            message: "Негацијата не се пишува слеано со глаголот.".to_string(),
+            suggestions: vec![format!("{} {}", &t.text[..cut], &t.text[cut..])],
+        });
+    }
+}
+
+/// `нај` never stands alone: `најдобар` ✓, `нај добар` ✗ (§207).
+///
+/// Fires only when the fused form is an established word, so the check
+/// never invents vocabulary.
+fn naj_separated(
+    tokens: &[Token<'_>],
+    lexicon: &crate::lexicon::Lexicon,
+    morph: &Morphology,
+    out: &mut Vec<Diagnostic>,
+) {
+    for pair in tokens.windows(2) {
+        let (first, second) = (&pair[0], &pair[1]);
+        if first.kind != TokenKind::Word || second.kind != TokenKind::Word {
+            continue;
+        }
+        if first.text.to_lowercase() != "нај" {
+            continue;
+        }
+        let ok_pos = morph.analyze(second.text).iter().any(|a| {
+            matches!(a.pos(), Some(Pos::Adjective | Pos::Noun | Pos::Verb))
+        });
+        if !ok_pos {
+            continue;
+        }
+        let fused = format!("нај{}", second.text.to_lowercase());
+        if !lexicon.contains(&fused) && morph.analyze(&fused).is_empty() {
+            continue;
+        }
+        let fix = if first.text.starts_with(char::is_uppercase) {
+            capitalize_first(&fused)
+        } else {
+            fused
+        };
+        out.push(Diagnostic {
+            rule: rule::NAJ_SEPARATED.to_string(),
+            severity: Severity::Error,
+            char_start: first.char_start,
+            char_end: second.char_end,
+            text: format!("{} {}", first.text, second.text),
+            message: "Нај се пишува слеано со зборот што го степенува.".to_string(),
+            suggestions: vec![fix],
+        });
+    }
+}
+
+/// Uppercase the first character, leave the rest untouched.
+fn capitalize_first(s: &str) -> String {
+    let mut chars = s.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+        None => String::new(),
+    }
+}
+
 /// An л-participle agreeing with its subject: `таа дошла` ✓, `таа дошол` ✗.
 ///
 /// Adjacent `[subject-pronoun, l-participle]` only — `тој е дошол` with an
@@ -361,11 +489,40 @@ mod tests {
         add("ѝ", "clitic", &["prn", "pers", "clt", "p3", "f", "sg", "dat"]);
         add("и", "clitic", &["prn", "pers", "clt", "p3", "f", "sg", "dat"]);
         add("и", "и", &["cnjcoo"]);
+        // не-fusion: verbs, nouns, and non-finite forms sharing stems
+        add("сака", "сака", &["vblex", "impf", "tv", "pres", "p3", "sg"]);
+        add("пријател", "пријател", &["n", "m", "sg", "nom", "ind"]);
+        add("мој", "мој", &["det", "pos", "ind", "sg"]);
+        add("сакајќи", "сака", &["vblex", "impf", "tv", "pprs", "adv"]);
+        add("напишан", "напише", &["vblex", "perf", "tv", "pp", "m", "sg", "ind"]);
+        add("прави", "прав", &["adj", "mfn", "pl", "nom", "ind"]);
+        add("прави", "прави", &["vblex", "impf", "tv", "imp", "sg"]);
+        add("објаснив", "објасни", &["vblex", "perf", "tv", "aor", "p1", "sg"]);
+        add("погоди", "погоди", &["vblex", "perf", "tv", "aor", "p3", "sg"]);
+        add("добар", "добар", &["adj", "m", "sg", "nom", "ind"]);
+        add("најдобар", "добар", &["pref", "sup", "adj", "m", "sg", "nom", "ind"]);
         Morphology::from_bytes(&Morphology::build(&e).unwrap()).unwrap()
     }
 
+    /// Words the test checker treats as established vocabulary.
+    fn lexicon() -> crate::lexicon::Lexicon {
+        crate::lexicon::Lexicon::from_bytes(
+            crate::lexicon::Lexicon::build_from_unsorted(
+                [
+                    "тој", "таа", "тоа", "тие", "ми", "го", "ја", "им", "даде", "остави",
+                    "дошол", "дошла", "дошле", "водел", "водела", "убавата", "книгата",
+                    "книга", "и", "ѝ", "не", "сака", "пријател", "мој", "добар",
+                    "непријател", "нестане", "најдобар",
+                ]
+                .into_iter(),
+            )
+            .unwrap(),
+        )
+        .unwrap()
+    }
+
     fn run(text: &str) -> Vec<Diagnostic> {
-        check(&tokenize(text), &morphology())
+        check(&tokenize(text), &lexicon(), &morphology())
     }
 
     #[test]
@@ -462,6 +619,61 @@ mod tests {
         // го/ја/и are objects (accusative/dative), never subjects.
         assert!(run("го водела").is_empty());
         assert!(run("ја водела").is_empty());
+    }
+
+    #[test]
+    fn flags_ne_fused_to_a_verb() {
+        let found = run("тој несака");
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].rule, rule::NE_FUSED);
+        assert_eq!(found[0].text, "несака");
+        assert_eq!(found[0].suggestions, vec!["не сака".to_string()]);
+    }
+
+    #[test]
+    fn ne_ignores_established_words() {
+        assert!(run("тој непријател").is_empty());
+        assert!(run("тој нестане").is_empty());
+        assert!(run("немој вака").is_empty());
+    }
+
+    #[test]
+    fn ne_ignores_nonfinite_stems() {
+        // Gerunds and participles take не- fused (§187).
+        assert!(run("тој несакајќи").is_empty());
+        assert!(run("тој ненапишан").is_empty());
+    }
+
+    #[test]
+    fn ne_ignores_stems_with_content_word_readings() {
+        // прав is also an adjective (неправ = unjust), so silence wins.
+        assert!(run("тој неправи").is_empty());
+    }
+
+    #[test]
+    fn ne_ignores_aorist_only_stems() {
+        // Aorist-1sg stems double as -ив adjectives (необјаснив).
+        assert!(run("тој необјаснив").is_empty());
+    }
+
+    #[test]
+    fn ne_ignores_lexicalized_fusions() {
+        // нестане (vanish) and непогоди (disasters) collide with negation.
+        assert!(run("тој нестане").is_empty());
+        assert!(run("непогоди").is_empty());
+    }
+
+    #[test]
+    fn flags_naj_split_from_an_adjective() {
+        let found = run("нај добар");
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].rule, rule::NAJ_SEPARATED);
+        assert_eq!(found[0].suggestions, vec!["најдобар".to_string()]);
+    }
+
+    #[test]
+    fn naj_ignores_unverifiable_fusions() {
+        assert!(run("нај книга").is_empty());
     }
 
     #[test]
