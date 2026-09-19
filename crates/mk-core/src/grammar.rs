@@ -39,6 +39,7 @@ pub fn check(
     l_participle(tokens, morph, &mut out);
     ne_fused(tokens, morph, &mut out);
     naj_separated(tokens, lexicon, morph, &mut out);
+    sentence_capital(tokens, lexicon, &mut out);
     out
 }
 
@@ -318,6 +319,44 @@ fn naj_separated(
     }
 }
 
+fn sentence_capital(
+    tokens: &[Token<'_>],
+    lexicon: &crate::lexicon::Lexicon,
+    out: &mut Vec<Diagnostic>,
+) {
+    for (i, t) in tokens.iter().enumerate() {
+        if t.kind != TokenKind::Word
+            || t.text.chars().count() < 2
+            || t.text.chars().any(|c| c.is_uppercase())
+            || !lexicon.contains(t.text)
+        {
+            continue;
+        }
+        let at_start = i == 0;
+        let after_ender = i >= 2
+            && tokens[i - 1].kind == TokenKind::Punct
+            && tokens[i - 1].text.chars().all(|c| ".?!…".contains(c))
+            && !(tokens[i - 2].kind == TokenKind::Word
+                && tokens[i - 2].text.chars().count() == 1);
+        let after_ender = after_ender
+            || (i == 1
+                && tokens[0].kind == TokenKind::Punct
+                && tokens[0].text.chars().all(|c| ".?!…".contains(c)));
+        if !at_start && !after_ender {
+            continue;
+        }
+        out.push(Diagnostic {
+            rule: rule::SENTENCE_CAPITAL.to_string(),
+            severity: Severity::Error,
+            char_start: t.char_start,
+            char_end: t.char_end,
+            text: t.text.to_string(),
+            message: "Реченицата почнува со голема буква.".to_string(),
+            suggestions: vec![capitalize_first(t.text)],
+        });
+    }
+}
+
 /// Uppercase the first character, leave the rest untouched.
 fn capitalize_first(s: &str) -> String {
     let mut chars = s.chars();
@@ -512,7 +551,7 @@ mod tests {
                     "тој", "таа", "тоа", "тие", "ми", "го", "ја", "им", "даде", "остави",
                     "дошол", "дошла", "дошле", "водел", "водела", "убавата", "книгата",
                     "книга", "и", "ѝ", "не", "сака", "пријател", "мој", "добар",
-                    "непријател", "нестане", "најдобар",
+                    "непријател", "нестане", "најдобар", "утре",
                 ]
                 .into_iter(),
             )
@@ -525,9 +564,16 @@ mod tests {
         check(&tokenize(text), &lexicon(), &morphology())
     }
 
+    /// Diagnostics of one rule only. Older tests feed lowercase fragments;
+    /// since the sentence-capital rule, those also read as sentences
+    /// starting lowercase, so each older test scopes to its own rule.
+    fn run_rule(text: &str, rule: &str) -> Vec<Diagnostic> {
+        run(text).into_iter().filter(|d| d.rule == rule).collect()
+    }
+
     #[test]
     fn flags_the_article_marked_twice() {
-        let found = run("убавата книгата");
+        let found = run_rule("убавата книгата", rule::DOUBLE_DEFINITE);
         assert_eq!(found.len(), 1, "{found:?}");
         assert_eq!(found[0].rule, rule::DOUBLE_DEFINITE);
         assert_eq!(found[0].text, "убавата книгата");
@@ -536,7 +582,7 @@ mod tests {
 
     #[test]
     fn accepts_the_article_on_the_adjective_only() {
-        assert!(run("убавата книга").is_empty());
+        assert!(run_rule("убавата книга", rule::DOUBLE_DEFINITE).is_empty());
     }
 
     #[test]
@@ -556,14 +602,16 @@ mod tests {
     #[test]
     fn ignores_a_pair_that_does_not_agree() {
         // Feminine adjective, masculine noun — not one noun phrase.
-        assert!(run("убавата градот").is_empty());
+        assert!(run_rule("убавата градот", rule::DOUBLE_DEFINITE).is_empty());
     }
 
     #[test]
     fn does_not_reach_across_punctuation() {
         // Two separate sentences must never be read as one phrase.
-        assert!(run("Ја видов убавата. Книгата беше таму.").is_empty());
-        assert!(run("убавата, книгата").is_empty());
+        assert!(
+            run_rule("Ја видов убавата. Книгата беше таму.", rule::DOUBLE_DEFINITE).is_empty()
+        );
+        assert!(run_rule("убавата, книгата", rule::DOUBLE_DEFINITE).is_empty());
     }
 
     #[test]
@@ -573,7 +621,7 @@ mod tests {
 
     #[test]
     fn finds_more_than_one_occurrence() {
-        let found = run("убавата книгата и новата куќата");
+        let found = run_rule("убавата книгата и новата куќата", rule::DOUBLE_DEFINITE);
         assert_eq!(found.len(), 2, "{found:?}");
         assert_eq!(found[1].suggestions, vec!["новата куќа".to_string()]);
     }
@@ -593,8 +641,8 @@ mod tests {
     #[test]
     fn flags_reversed_clitics_before_a_verb() {
         // Dative before accusative: ми го даде ✓ silent, го ми даде ✗ fires.
-        assert!(run("тој ми го даде").is_empty());
-        let found = run("тој го ми даде");
+        assert!(run_rule("тој ми го даде", rule::CLITIC_ORDER).is_empty());
+        let found = run_rule("тој го ми даде", rule::CLITIC_ORDER);
         assert_eq!(found.len(), 1, "{found:?}");
         assert_eq!(found[0].rule, rule::CLITIC_ORDER);
         assert_eq!(found[0].text, "го ми даде");
@@ -604,26 +652,26 @@ mod tests {
     #[test]
     fn clitic_order_stays_silent_without_a_verb() {
         // No verb after the pair — not enough context to judge.
-        assert!(run("тој го ми").is_empty());
+        assert!(run_rule("тој го ми", rule::CLITIC_ORDER).is_empty());
     }
 
     #[test]
     fn clitic_order_ignores_the_negation_particle() {
         // не is negation here, not an accusative clitic — must stay silent,
         // and must never propose the ungrammatical swap "им не остави".
-        assert!(run("не им остави").is_empty());
+        assert!(run_rule("не им остави", rule::CLITIC_ORDER).is_empty());
     }
 
     #[test]
     fn participle_ignores_object_clitics_as_subjects() {
         // го/ја/и are objects (accusative/dative), never subjects.
-        assert!(run("го водела").is_empty());
-        assert!(run("ја водела").is_empty());
+        assert!(run_rule("го водела", rule::L_PARTICIPLE).is_empty());
+        assert!(run_rule("ја водела", rule::L_PARTICIPLE).is_empty());
     }
 
     #[test]
     fn flags_ne_fused_to_a_verb() {
-        let found = run("тој несака");
+        let found = run_rule("тој несака", rule::NE_FUSED);
         assert_eq!(found.len(), 1, "{found:?}");
         assert_eq!(found[0].rule, rule::NE_FUSED);
         assert_eq!(found[0].text, "несака");
@@ -632,35 +680,35 @@ mod tests {
 
     #[test]
     fn ne_ignores_established_words() {
-        assert!(run("тој непријател").is_empty());
-        assert!(run("тој нестане").is_empty());
-        assert!(run("немој вака").is_empty());
+        assert!(run_rule("тој непријател", rule::NE_FUSED).is_empty());
+        assert!(run_rule("тој нестане", rule::NE_FUSED).is_empty());
+        assert!(run_rule("немој вака", rule::NE_FUSED).is_empty());
     }
 
     #[test]
     fn ne_ignores_nonfinite_stems() {
         // Gerunds and participles take не- fused (§187).
-        assert!(run("тој несакајќи").is_empty());
-        assert!(run("тој ненапишан").is_empty());
+        assert!(run_rule("тој несакајќи", rule::NE_FUSED).is_empty());
+        assert!(run_rule("тој ненапишан", rule::NE_FUSED).is_empty());
     }
 
     #[test]
     fn ne_ignores_stems_with_content_word_readings() {
         // прав is also an adjective (неправ = unjust), so silence wins.
-        assert!(run("тој неправи").is_empty());
+        assert!(run_rule("тој неправи", rule::NE_FUSED).is_empty());
     }
 
     #[test]
     fn ne_ignores_aorist_only_stems() {
         // Aorist-1sg stems double as -ив adjectives (необјаснив).
-        assert!(run("тој необјаснив").is_empty());
+        assert!(run_rule("тој необјаснив", rule::NE_FUSED).is_empty());
     }
 
     #[test]
     fn ne_ignores_lexicalized_fusions() {
         // нестане (vanish) and непогоди (disasters) collide with negation.
-        assert!(run("тој нестане").is_empty());
-        assert!(run("непогоди").is_empty());
+        assert!(run_rule("тој нестане", rule::NE_FUSED).is_empty());
+        assert!(run_rule("непогоди", rule::NE_FUSED).is_empty());
     }
 
     #[test]
@@ -679,8 +727,8 @@ mod tests {
     #[test]
     fn flags_bare_i_in_a_dative_slot() {
         // таа ѝ го даде ✓ silent; таа и го даде ✗ fires with ѝ.
-        assert!(run("таа ѝ го даде").is_empty());
-        let found = run("таа и го даде");
+        assert!(run_rule("таа ѝ го даде", rule::DATIVE_I).is_empty());
+        let found = run_rule("таа и го даде", rule::DATIVE_I);
         assert_eq!(found.len(), 1, "{found:?}");
         assert_eq!(found[0].rule, rule::DATIVE_I);
         assert_eq!(found[0].text, "и");
@@ -690,15 +738,15 @@ mod tests {
     #[test]
     fn dative_i_stays_silent_after_a_verb() {
         // "пее и го гледа" — и here is the conjunction, not the clitic.
-        assert!(run("таа пее и го даде").is_empty());
+        assert!(run_rule("таа пее и го даде", rule::DATIVE_I).is_empty());
     }
 
     #[test]
     fn flags_wrong_participle_gender() {
-        assert!(run("таа дошла").is_empty());
-        assert!(run("тој дошол").is_empty());
-        assert!(run("тие дошле").is_empty());
-        let found = run("таа дошол");
+        assert!(run_rule("таа дошла", rule::L_PARTICIPLE).is_empty());
+        assert!(run_rule("тој дошол", rule::L_PARTICIPLE).is_empty());
+        assert!(run_rule("тие дошле", rule::L_PARTICIPLE).is_empty());
+        let found = run_rule("таа дошол", rule::L_PARTICIPLE);
         assert_eq!(found.len(), 1, "{found:?}");
         assert_eq!(found[0].rule, rule::L_PARTICIPLE);
         assert_eq!(found[0].suggestions, vec!["таа дошла".to_string()]);
@@ -708,9 +756,30 @@ mod tests {
     fn flags_wrong_participle_number_without_a_guess_it_cannot_make() {
         // тоа + дошол: neuter subject, masculine participle — fires, and no
         // neuter form is stored, so there is no suggestion to offer.
-        let found = run("тоа дошол");
+        let found = run_rule("тоа дошол", rule::L_PARTICIPLE);
         assert_eq!(found.len(), 1, "{found:?}");
         assert_eq!(found[0].rule, rule::L_PARTICIPLE);
         assert!(found[0].suggestions.is_empty(), "{:?}", found[0].suggestions);
+    }
+
+    #[test]
+    fn flags_lowercase_after_a_full_stop() {
+        let found = run("Тој дојде. утре ќе врне.");
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].rule, rule::SENTENCE_CAPITAL);
+        assert_eq!(found[0].text, "утре");
+        assert_eq!(found[0].suggestions, vec!["Утре".to_string()]);
+    }
+
+    #[test]
+    fn ignores_abbreviation_dots() {
+        assert!(run("Тоа е, т.е. нешто друго.").is_empty());
+        assert!(run("Се виде со г. Петров вчера.").is_empty());
+    }
+
+    #[test]
+    fn only_uppercases_never_lowercases() {
+        assert!(run("Тој рече: оди си дома.").is_empty());
+        assert!(run("Утре ќе врне.").is_empty());
     }
 }

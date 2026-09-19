@@ -37,6 +37,8 @@ pub mod rule {
     pub const NE_FUSED: &str = "MK_NE_FUSED";
     /// `нај` split from its adjective: `нај добар` ✗, `најдобар` ✓.
     pub const NAJ_SEPARATED: &str = "MK_NAJ_SEPARATED";
+    /// First word of a sentence starts lowercase: `Тој дојде. утре` ✗.
+    pub const SENTENCE_CAPITAL: &str = "MK_SENTENCE_CAPITAL";
 }
 
 /// One problem found in the text.
