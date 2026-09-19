@@ -327,7 +327,7 @@ fn po_separated(
     morph: &Morphology,
     out: &mut Vec<Diagnostic>,
 ) {
-    for pair in tokens.windows(2) {
+    for (i, pair) in tokens.windows(2).enumerate() {
         let (first, second) = (&pair[0], &pair[1]);
         if first.kind != TokenKind::Word || second.kind != TokenKind::Word {
             continue;
@@ -336,10 +336,35 @@ fn po_separated(
             continue;
         }
         let ok_pos = morph.analyze(second.text).iter().any(|a| {
-            matches!(a.pos(), Some(Pos::Adjective | Pos::Noun | Pos::Verb))
+            matches!(a.pos(), Some(Pos::Adjective | Pos::Verb))
         });
         if !ok_pos {
             continue;
+        }
+        // Definite-marked seconds are prepositional or ambiguous
+        // (`по старите улици` could be `постарите`, `по добриот` could be
+        // `подобриот`): silence wins over guessing.
+        if morph.analyze(second.text).iter().any(|a| a.is_definite()) {
+            continue;
+        }
+        // `по X Y-def` governs a phrase (`По успешно спроведениот референдум`).
+        if let Some(third) = tokens.get(i + 2) {
+            if third.kind == TokenKind::Word
+                && morph.analyze(third.text).iter().any(|a| {
+                    matches!(a.pos(), Some(Pos::Adjective | Pos::Noun)) && a.is_definite()
+                })
+            {
+                continue;
+            }
+        }
+        // `професор по X`: noun-governed prepositional complement.
+        if i >= 1 {
+            let prev = &tokens[i - 1];
+            if prev.kind == TokenKind::Word
+                && morph.analyze(prev.text).iter().any(|a| a.pos() == Some(Pos::Noun))
+            {
+                continue;
+            }
         }
         let fused = format!("по{}", second.text.to_lowercase());
         if !lexicon.contains(&fused) && morph.analyze(&fused).is_empty() {
@@ -387,6 +412,35 @@ fn sentence_capital(
                 && tokens[0].text.chars().all(|c| ".?!…".contains(c)));
         if !at_start && !after_ender {
             continue;
+        }
+        if after_ender && !at_start && i >= 2 {
+            // Multi-letter abbreviations: итн. др. сл. пр. тн.
+            const ABBREV: &[&str] = &["итн", "др", "сл", "пр", "тн"];
+            if tokens[i - 2].kind == TokenKind::Word
+                && ABBREV.contains(&tokens[i - 2].text.to_lowercase().as_str())
+            {
+                continue;
+            }
+            // Number-dots are ordinals/lists: 137. стоеше.
+            if tokens[i - 2].kind == TokenKind::Number {
+                continue;
+            }
+            // Ellipsis right after an opening quote: „…обединувајќи.
+            if tokens[i - 1].text == "…"
+                && tokens[i - 2].kind == TokenKind::Punct
+                && ["„", "\"", "«", "'", "‘"].contains(&tokens[i - 2].text)
+            {
+                continue;
+            }
+            // URLs glued both sides: град.ск (dot byte-adjacent left AND
+            // (byte-adjacent right OR next word ≤ 3 chars)).
+            // Normal "реченица. Утре" has a gap on the right and a long next word.
+            let ender = &tokens[i - 1];
+            let left_glued = tokens[i - 2].byte_end == ender.byte_start;
+            let right_glued = ender.byte_end == t.byte_start;
+            if left_glued && (right_glued || t.text.chars().count() <= 3) {
+                continue;
+            }
         }
         out.push(Diagnostic {
             rule: rule::SENTENCE_CAPITAL.to_string(),
@@ -619,6 +673,17 @@ mod tests {
         add("најдобар", "добар", &["pref", "sup", "adj", "m", "sg", "nom", "ind"]);
         add("подобар", "добар", &["pref", "comp", "adj", "m", "sg", "nom", "ind"]);
         add("пат", "пат", &["n", "m", "sg", "nom", "ind"]);
+        // precision-guard probes: definiteness + POS of по-frames
+        add("успешно", "успешен", &["adj", "nt", "sg", "nom", "ind"]);
+        add("успешно", "успешно", &["adv"]);
+        add("спроведениот", "спроведен", &["adj", "m", "sg", "nom", "def"]);
+        add("катастрофалниот", "катастрофален", &["adj", "m", "sg", "nom", "def"]);
+        add("уставно", "уставен", &["adj", "nt", "sg", "nom", "ind"]);
+        add("железнички", "железнички", &["adj", "mfn", "pl", "nom", "ind"]);
+        add("професор", "професор", &["n", "m", "sg", "nom", "ind"]);
+        add("право", "право", &["n", "nt", "sg", "nom", "ind"]);
+        add("референдум", "референдум", &["n", "m", "sg", "nom", "ind"]);
+        add("земјотрес", "земјотрес", &["n", "m", "sg", "nom", "ind"]);
         Morphology::from_bytes(&Morphology::build(&e).unwrap()).unwrap()
     }
 
@@ -631,6 +696,9 @@ mod tests {
                     "дошол", "дошла", "дошле", "водел", "водела", "убавата", "книгата",
                     "книга", "и", "ѝ", "не", "сака", "пријател", "мој", "добар",
                     "непријател", "нестане", "најдобар", "подобар", "утре",
+                    "па", "ск", "град", "дома", "рече", "обединувајќи", "ги",
+                    "сите", "точка", "стоеше", "сам", "продолжи", "итн",
+                    "поуспешно",
                 ]
                 .into_iter(),
             )
@@ -855,6 +923,14 @@ mod tests {
     }
 
     #[test]
+    fn po_ignores_definite_and_governed_frames() {
+        assert!(run("По успешно спроведениот референдум").is_empty());
+        assert!(run("по катастрофалниот земјотрес").is_empty());
+        assert!(run("професор по уставно право").is_empty());
+        assert!(run("по железнички пат").is_empty());
+    }
+
+    #[test]
     fn flags_lowercase_after_a_full_stop() {
         let found = run("Тој дојде. утре ќе врне.");
         assert_eq!(found.len(), 1, "{found:?}");
@@ -873,6 +949,14 @@ mod tests {
     fn only_uppercases_never_lowercases() {
         assert!(run("Тој рече: оди си дома.").is_empty());
         assert!(run("Утре ќе врне.").is_empty());
+    }
+
+    #[test]
+    fn sentence_ignores_non_ending_dots() {
+        assert!(run("Тоа е, итн. па продолжи.").is_empty());
+        assert!(run("Види град.ск дома.").is_empty());
+        assert!(run("Тој рече „… обединувајќи ги сите.").is_empty());
+        assert!(run("Точка 137. стоеше сам.").is_empty());
     }
 
     #[test]
