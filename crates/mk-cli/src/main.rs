@@ -19,6 +19,7 @@ mk — Macedonian spelling checker
 USAGE:
     mk build-lexicon <wordlist.txt>... <out.fst>
     mk build-morph <morph.tsv> <out.morph>
+    mk build-freq <freq.tsv> <out.freq>
     mk analyze <morph> <word>...
     mk check <lexicon.fst> <text>
     mk check <lexicon.fst> --file <path> [--json]
@@ -28,13 +29,14 @@ Add --morph <mk.morph> to any check to enable the grammar rules.
 ";
 
 /// Flags that consume the argument after them.
-const FLAGS_WITH_VALUES: &[&str] = &["--file", "--morph"];
+const FLAGS_WITH_VALUES: &[&str] = &["--file", "--morph", "--freq"];
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let result = match args.first().map(String::as_str) {
         Some("build-lexicon") => build_lexicon(&args[1..]),
         Some("build-morph") => build_morph(&args[1..]),
+        Some("build-freq") => build_freq(&args[1..]),
         Some("analyze") => analyze(&args[1..]),
         Some("check") => check(&args[1..]),
         Some("-h") | Some("--help") | None => {
@@ -138,6 +140,30 @@ fn build_morph(args: &[String]) -> Result<bool, String> {
     Ok(false)
 }
 
+/// Compile the TSV produced by `tools/build_freq.py` into a freq blob.
+fn build_freq(args: &[String]) -> Result<bool, String> {
+    use mk_core::frequency::Frequency;
+    let [input, output] = args else {
+        return Err(format!("build-freq needs an input and an output path\n\n{USAGE}"));
+    };
+    let text = std::fs::read_to_string(input).map_err(|e| format!("reading {input}: {e}"))?;
+    let mut entries: Vec<(String, u32)> = Vec::new();
+    for line in text.lines() {
+        let mut cols = line.split('\t');
+        let (Some(w), Some(n)) = (cols.next(), cols.next()) else { continue };
+        if w.is_empty() {
+            continue;
+        }
+        let n: u32 = n.trim().parse().map_err(|_| format!("bad count in {input}"))?;
+        entries.push((w.to_string(), n));
+    }
+    let refs: Vec<(&str, u32)> = entries.iter().map(|(w, n)| (w.as_str(), *n)).collect();
+    let bytes = Frequency::build(&refs).map_err(|e| format!("building frequency: {e}"))?;
+    std::fs::write(output, &bytes).map_err(|e| format!("writing {output}: {e}"))?;
+    eprintln!("freq      {} words -> {output}", entries.len());
+    Ok(false)
+}
+
 /// Print the morphological readings of each word given.
 fn analyze(args: &[String]) -> Result<bool, String> {
     let Some((path, words)) = args.split_first() else {
@@ -207,6 +233,13 @@ fn check(args: &[String]) -> Result<bool, String> {
         let raw = std::fs::read(path).map_err(|e| format!("reading {path}: {e}"))?;
         let morph = Morphology::from_bytes(&raw).map_err(|e| format!("loading {path}: {e}"))?;
         checker = checker.with_morphology(morph);
+    }
+    if let Some(pos) = rest.iter().position(|a| a == "--freq") {
+        let path = rest.get(pos + 1).ok_or("--freq needs a path")?;
+        let raw = std::fs::read(path).map_err(|e| format!("reading {path}: {e}"))?;
+        let freq = mk_core::frequency::Frequency::from_bytes(&raw)
+            .map_err(|e| format!("loading {path}: {e}"))?;
+        checker = checker.with_frequency(freq);
     }
 
     let started = std::time::Instant::now();

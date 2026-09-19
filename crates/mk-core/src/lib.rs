@@ -16,6 +16,7 @@
 
 pub mod alphabet;
 pub mod diagnostic;
+pub mod frequency;
 pub mod grammar;
 pub mod homoglyph;
 pub mod levenshtein;
@@ -50,17 +51,28 @@ const MAX_ACRONYM_LEN: usize = 5;
 pub struct Checker {
     lexicon: Lexicon,
     morphology: Option<morphology::Morphology>,
+    frequency: Option<frequency::Frequency>,
 }
 
 impl Checker {
     /// Build a checker over a compiled FST lexicon. Spelling rules only.
     pub fn new(fst_bytes: Vec<u8>) -> Result<Self, fst::Error> {
-        Ok(Self { lexicon: Lexicon::from_bytes(fst_bytes)?, morphology: None })
+        Ok(Self {
+            lexicon: Lexicon::from_bytes(fst_bytes)?,
+            morphology: None,
+            frequency: None,
+        })
     }
 
     /// Enable the grammar rules by supplying a morphology table.
     pub fn with_morphology(mut self, morphology: morphology::Morphology) -> Self {
         self.morphology = Some(morphology);
+        self
+    }
+
+    /// Enable frequency-ranked suggestions. Missing table = old ranking.
+    pub fn with_frequency(mut self, frequency: frequency::Frequency) -> Self {
+        self.frequency = Some(frequency);
         self
     }
 
@@ -213,8 +225,21 @@ impl Checker {
             char_end: end,
             text: word.to_string(),
             message: "Непознат збор.".to_string(),
-            suggestions: self.lexicon.suggest(word, MAX_SUGGESTIONS),
+            suggestions: self.ranked_suggestions(word),
         })
+    }
+
+    /// FST hits reranked by frequency when a table is loaded.
+    /// No table = the lexicon's own order. Never invents candidates.
+    fn ranked_suggestions(&self, word: &str) -> Vec<String> {
+        let mut hits = self.lexicon.suggest(word, MAX_SUGGESTIONS * 4);
+        if let Some(f) = &self.frequency {
+            hits.sort_by_cached_key(|c| (std::cmp::Reverse(f.get(&c.to_lowercase())), c.clone()));
+            hits.truncate(MAX_SUGGESTIONS);
+        } else {
+            hits.truncate(MAX_SUGGESTIONS);
+        }
+        hits
     }
 
     /// `црно-бел` will not be in the lexicon, but both halves are. Accept the
@@ -263,6 +288,19 @@ mod tests {
 
     fn rules(text: &str) -> Vec<String> {
         checker().check(text).into_iter().map(|d| d.rule).collect()
+    }
+
+    #[test]
+    fn frequency_table_promotes_the_common_word() {
+        use crate::frequency::Frequency;
+        let words = ["книга", "книги", "книгата"];
+        let base = Checker::new(Lexicon::build_from_unsorted(words).unwrap()).unwrap();
+        let freq = Frequency::from_bytes(&Frequency::build(&[("книги", 900), ("книга", 1)]).unwrap())
+            .unwrap();
+        let ranked = base.with_frequency(freq);
+        let got = ranked.check("книгаи");
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].suggestions.first().map(String::as_str), Some("книги"));
     }
 
     #[test]
