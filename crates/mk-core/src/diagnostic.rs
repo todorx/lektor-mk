@@ -27,6 +27,10 @@ pub mod rule {
     pub const LATIN_TEXT: &str = "MK_LATIN_TEXT";
     /// The definite article is marked on both the adjective and the noun.
     pub const DOUBLE_DEFINITE: &str = "MK_DOUBLE_DEFINITE";
+    /// A dative clitic follows an accusative one: `ми го` ✓, `го ми` ✗.
+    pub const CLITIC_ORDER: &str = "MK_CLITIC_ORDER";
+    /// Bare `и` where the dative clitic `ѝ` belongs.
+    pub const DATIVE_I: &str = "MK_DATIVE_I";
 }
 
 /// One problem found in the text.

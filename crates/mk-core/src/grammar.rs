@@ -30,6 +30,8 @@ use crate::tokenizer::{Token, TokenKind};
 pub fn check(tokens: &[Token<'_>], morph: &Morphology) -> Vec<Diagnostic> {
     let mut out = Vec::new();
     double_definite_article(tokens, morph, &mut out);
+    clitic_order(tokens, morph, &mut out);
+    dative_i(tokens, morph, &mut out);
     out
 }
 
@@ -105,6 +107,94 @@ fn compatible(a: Gender, b: Gender) -> bool {
     a == b || a == Gender::Common || b == Gender::Common
 }
 
+/// Dative clitics come before accusative ones: `ми го даде` ✓, `го ми даде` ✗.
+///
+/// Fires on `[acc-clitic, dat-clitic, verb]` only. The verb anchor is what
+/// disambiguates: `ми` alone also reads as a verb form, but two adjacent
+/// verbs (`ми даде` read verbally) are ungrammatical anyway, so the reversed
+/// pair before a verb is wrong under every reading.
+fn clitic_order(tokens: &[Token<'_>], morph: &Morphology, out: &mut Vec<Diagnostic>) {
+    for win in tokens.windows(3) {
+        if win.iter().any(|t| t.kind != TokenKind::Word) {
+            continue;
+        }
+        let (first, second, third) = (&win[0], &win[1], &win[2]);
+        let acc = morph.analyze(first.text);
+        let dat = morph.analyze(second.text);
+        let verb = morph.analyze(third.text);
+        if acc.is_empty() || dat.is_empty() || verb.is_empty() {
+            continue;
+        }
+        let is_acc = |a: &Analysis<'_>| a.pos() == Some(Pos::Pronoun) && a.has("acc");
+        let is_dat = |a: &Analysis<'_>| a.pos() == Some(Pos::Pronoun) && a.has("dat");
+        if !acc.iter().any(is_acc) || acc.iter().any(|a| a.pos() == Some(Pos::Verb)) {
+            continue;
+        }
+        if !dat.iter().any(is_dat) {
+            continue;
+        }
+        if !verb.iter().any(|a| a.pos() == Some(Pos::Verb)) {
+            continue;
+        }
+        out.push(Diagnostic {
+            rule: rule::CLITIC_ORDER.to_string(),
+            severity: Severity::Error,
+            char_start: first.char_start,
+            char_end: third.char_end,
+            text: format!("{} {} {}", first.text, second.text, third.text),
+            message: "Заменките се пишуваат: дативна пред акузативна (ми го, не го ми).".to_string(),
+            suggestions: vec![format!("{} {} {}", first.text, second.text, third.text)
+                .replacen(
+                    &format!("{} {}", first.text, second.text),
+                    &format!("{} {}", second.text, first.text),
+                    1,
+                )],
+        });
+    }
+}
+
+/// Bare `и` where the dative clitic `ѝ` belongs: `таа и го даде` ✗.
+///
+/// Deliberately narrow: only after a subject pronoun and before an accusative
+/// clitic (`таа и го даде`). After a verb (`пее и го гледа`) the `и` is the
+/// conjunction and the rule stays silent.
+fn dative_i(tokens: &[Token<'_>], morph: &Morphology, out: &mut Vec<Diagnostic>) {
+    const SUBJECTS: &[&str] = &["јас", "ти", "тој", "таа", "тоа", "ние", "вие", "тие"];
+    for win in tokens.windows(3) {
+        if win.iter().any(|t| t.kind != TokenKind::Word) {
+            continue;
+        }
+        let (subj, maybe_i, acc) = (&win[0], &win[1], &win[2]);
+        if maybe_i.text.to_lowercase() != "и" {
+            continue;
+        }
+        if !SUBJECTS.contains(&subj.text.to_lowercase().as_str()) {
+            continue;
+        }
+        let i_readings = morph.analyze(maybe_i.text);
+        if !i_readings.iter().any(|a| a.pos() == Some(Pos::Pronoun) && a.has("dat")) {
+            continue;
+        }
+        let acc_readings = morph.analyze(acc.text);
+        if acc_readings.is_empty()
+            || !acc_readings.iter().any(|a| a.pos() == Some(Pos::Pronoun) && a.has("acc"))
+        {
+            continue;
+        }
+        let fixed = if maybe_i.text.starts_with(char::is_uppercase) { "Ѝ" } else { "ѝ" };
+        out.push(Diagnostic {
+            rule: rule::DATIVE_I.to_string(),
+            severity: Severity::Error,
+            char_start: maybe_i.char_start,
+            char_end: maybe_i.char_end,
+            text: maybe_i.text.to_string(),
+            message: "Дативната заменка ѝ се пишува со гравис, за разлика од сврзникот и."
+                .to_string(),
+            suggestions: vec![fixed.to_string()],
+        });
+    }
+}
+
 /// The bare form of the noun, so the suggestion can drop the second article.
 ///
 /// The lemma is the indefinite singular, so it works directly for singulars.
@@ -159,6 +249,15 @@ mod tests {
         add("новата", "нов", &["adj", "f", "sg", "nom", "def"]);
         add("куќата", "куќа", &["n", "f", "sg", "nom", "def"]);
         add("куќа", "куќа", &["n", "f", "sg", "nom", "ind"]);
+        // clitics: dative before accusative (ми го), verb, subject pronouns
+        add("ми", "ми", &["prn", "pers", "clt", "p1", "mfn", "sg", "dat"]);
+        add("го", "clitic", &["prn", "pers", "clt", "p3", "m", "sg", "acc"]);
+        add("даде", "даде", &["vblex", "perf", "tv", "aor", "p3", "sg"]);
+        add("таа", "таа", &["prn", "pers", "p3", "f", "sg", "nom"]);
+        add("тој", "тој", &["prn", "pers", "p3", "m", "sg", "nom"]);
+        add("ѝ", "clitic", &["prn", "pers", "clt", "p3", "f", "sg", "dat"]);
+        add("и", "clitic", &["prn", "pers", "clt", "p3", "f", "sg", "dat"]);
+        add("и", "и", &["cnjcoo"]);
         Morphology::from_bytes(&Morphology::build(&e).unwrap()).unwrap()
     }
 
@@ -229,5 +328,39 @@ mod tests {
             .take(found[0].char_end - found[0].char_start)
             .collect();
         assert_eq!(sliced, "убавата книгата");
+    }
+
+    #[test]
+    fn flags_reversed_clitics_before_a_verb() {
+        // Dative before accusative: ми го даде ✓ silent, го ми даде ✗ fires.
+        assert!(run("тој ми го даде").is_empty());
+        let found = run("тој го ми даде");
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].rule, rule::CLITIC_ORDER);
+        assert_eq!(found[0].text, "го ми даде");
+        assert_eq!(found[0].suggestions, vec!["ми го даде".to_string()]);
+    }
+
+    #[test]
+    fn clitic_order_stays_silent_without_a_verb() {
+        // No verb after the pair — not enough context to judge.
+        assert!(run("тој го ми").is_empty());
+    }
+
+    #[test]
+    fn flags_bare_i_in_a_dative_slot() {
+        // таа ѝ го даде ✓ silent; таа и го даде ✗ fires with ѝ.
+        assert!(run("таа ѝ го даде").is_empty());
+        let found = run("таа и го даде");
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].rule, rule::DATIVE_I);
+        assert_eq!(found[0].text, "и");
+        assert_eq!(found[0].suggestions, vec!["ѝ".to_string()]);
+    }
+
+    #[test]
+    fn dative_i_stays_silent_after_a_verb() {
+        // "пее и го гледа" — и here is the conjunction, not the clitic.
+        assert!(run("таа пее и го даде").is_empty());
     }
 }
