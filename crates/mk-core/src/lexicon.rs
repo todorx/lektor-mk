@@ -110,15 +110,55 @@ impl Lexicon {
 ///
 /// Typing errors preserve the first letter far more often than not, and a
 /// correction close in length is likelier than a much longer or shorter word.
-// TODO: once a frequency table is derived from a corpus, fold it in here —
-// it is the single biggest improvement available to suggestion quality.
+/// Confusable Macedonian letters (к/ќ, е/ѐ) sort before distant ones.
+/// Frequency reranks after this in `Checker::ranked_suggestions`.
+/// Cost of substituting `a` for `b` when reranking suggestions.
+///
+/// The FST search stays at exact edit distance ≤2; this only orders the hits.
+/// One-key Macedonian slips (к/ќ, е/ѐ) cost 1, everything else 2.
+// ponytail: static pair list, HashSet if it grows past ~30 pairs
+pub fn confusion_cost(a: char, b: char) -> u32 {
+    if a == b {
+        return 0;
+    }
+    const PAIRS: &[(char, char)] = &[
+        ('к', 'ќ'),
+        ('г', 'ѓ'),
+        ('с', 'ѕ'),
+        ('з', 'ѕ'),
+        ('џ', 'ч'),
+        ('е', 'ѐ'),
+        ('и', 'ѝ'),
+        ('о', 'у'),
+    ];
+    if PAIRS.contains(&(a, b)) || PAIRS.contains(&(b, a)) {
+        1
+    } else {
+        2
+    }
+}
+
+/// Aligned confusion cost between `query` and `candidate`, plus 2 per
+/// length difference. Cheap proxy, not a full alignment.
+fn weighted_cost(query: &[char], candidate: &[char]) -> u32 {
+    let shared = query.len().min(candidate.len());
+    let mut cost = 0u32;
+    for i in 0..shared {
+        cost += confusion_cost(query[i], candidate[i]);
+    }
+    cost += 2 * (query.len().abs_diff(candidate.len()) as u32);
+    cost
+}
+
 fn rank(query: &str, candidates: &mut [String]) {
     let first = query.chars().next();
-    let qlen = query.chars().count() as isize;
+    let qchars: Vec<char> = query.chars().collect();
+    let qlen = qchars.len() as isize;
     candidates.sort_by_cached_key(|c| {
+        let cchars: Vec<char> = c.chars().collect();
         let same_first = c.chars().next() != first;
-        let len_delta = (c.chars().count() as isize - qlen).abs();
-        (same_first, len_delta, c.clone())
+        let len_delta = (cchars.len() as isize - qlen).abs();
+        (weighted_cost(&qchars, &cchars), same_first, len_delta, c.clone())
     });
 }
 
@@ -163,6 +203,21 @@ mod tests {
         let lex = lexicon(&["дом", "том", "дим"]);
         let got = lex.suggest("дом", 3);
         assert_eq!(got.first().map(String::as_str), Some("дим"), "got {got:?}");
+    }
+
+    #[test]
+    fn confusion_pair_outranks_distant_word() {
+        assert_eq!(confusion_cost('к', 'ќ'), 1);
+        assert_eq!(confusion_cost('к', 'м'), 2);
+        assert_eq!(confusion_cost('е', 'ѐ'), 1);
+    }
+
+    #[test]
+    fn ranking_prefers_the_confusable_letter() {
+        // ќ is one slip from к; м is not. Both one edit from "как".
+        let lex = lexicon(&["ќак", "мак", "как"]);
+        let got = lex.suggest("как", 3);
+        assert_eq!(got.first().map(String::as_str), Some("ќак"), "got {got:?}");
     }
 
     #[test]
