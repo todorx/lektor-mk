@@ -1,0 +1,30 @@
+{
+  "manifest_version": 2,
+  "name": "Macedonian Proofreader",
+  "version": "0.1.0",
+  "description": "Local-only Macedonian spelling and grammar checker. No text ever leaves your machine.",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "mk-proofreader@macedonian-text",
+      "strict_min_version": "109.0"
+    }
+  },
+  "permissions": ["activeTab", "storage", "clipboardWrite"],
+  "background": {
+    "scripts": ["mk_pkg/mk_wasm.js", "background.js"]
+  },
+  "browser_action": {
+    "default_title": "Check Macedonian text",
+    "default_popup": "popup.html",
+    "default_icon": "icons/icon.svg"
+  },
+  "content_scripts": [
+    {
+      "matches": ["*://*/*"],
+      "js": ["content.js"],
+      "css": ["checker.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": ["mk_pkg/mk_wasm_bg.wasm", "mk.fst", "mk.morph", "mk.freq"]
+}

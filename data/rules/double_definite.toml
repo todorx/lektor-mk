@@ -1,0 +1,17 @@
+# Declarative mirror of the MK_DOUBLE_DEFINITE rule (grammar.rs).
+#
+# This file is a schema proof, not yet read by the engine: it shows that the
+# existing rule fits a shape a non-Rust speaker can author. Full migration of
+# the engine to TOML rules happens only after 2+ rules are mirrored here.
+#
+# Schema:
+#   [[rule]] id      = stable Diagnostic id (diagnostic.rs, never renamed)
+#   pattern          = "adj.def + n.def & agree(gender, number), adjacent words only"
+#   message          = user-facing Macedonian string
+#   fix              = "drop-second-article via indefinite_form()"
+
+[[rule]]
+id = "MK_DOUBLE_DEFINITE"
+pattern = "adj.def + n.def & agree(gender, number)"
+message = "Членот се пишува само на првиот збор во именската група."
+fix = "drop-second-article via indefinite_form()"

@@ -76,6 +76,12 @@ impl Checker {
         self
     }
 
+    /// Attach a frequency table after construction (for WASM-style setup
+    /// where blobs arrive one at a time). Overwrites any previous table.
+    pub fn set_frequency(&mut self, frequency: frequency::Frequency) {
+        self.frequency = Some(frequency);
+    }
+
     /// Borrow the underlying lexicon.
     pub fn lexicon(&self) -> &Lexicon {
         &self.lexicon

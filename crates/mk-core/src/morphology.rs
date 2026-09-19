@@ -25,19 +25,22 @@
 //! All integers little-endian.
 //!
 //! ```text
-//! magic     "MKMORPH1"                       8 bytes
+//! magic     "MKMORPH2"                       8 bytes
 //! fst       u32 length, then that many bytes  (surface -> entry index)
 //! vocab     u32 count, each: u16 len + UTF-8  (tag names)
 //! lemmas    u32 count, each: u16 len + UTF-8
 //! tagsets   u32 count, each: u8 len + u16 vocab ids
 //! entries   u32 count, each: u8 len + (u32 lemma id, u32 tagset id) pairs
+//! lp_forms  u32 count, each: u32 lemma id + u16 len + UTF-8 surface
+//!           (reverse index for л-participle suggestions only — the full
+//!           surface table would triple the blob past the extension budget)
 //! ```
 
 use std::collections::BTreeMap;
 
 use fst::{Map, MapBuilder};
 
-const MAGIC: &[u8; 8] = b"MKMORPH1";
+const MAGIC: &[u8; 8] = b"MKMORPH2";
 
 /// Something went wrong loading or building a morphology table.
 #[derive(Debug)]
@@ -219,6 +222,10 @@ pub struct Morphology {
     tagsets: Vec<Vec<u16>>,
     /// Per entry, the (lemma id, tagset id) pairs making up its readings.
     entries: Vec<Vec<(u32, u32)>>,
+    /// (lemma id, surface) for readings tagged `lp`. The only reverse index
+    /// rules get: enough to propose an agreeing participle, small enough
+    /// (~12k rows) to keep the blob shippable.
+    lp_forms: Vec<(u32, String)>,
 }
 
 impl Morphology {
@@ -265,6 +272,22 @@ impl Morphology {
         self.map.get(form).is_some() || self.map.get(form.to_lowercase()).is_some()
     }
 
+    /// Every stored л-participle surface form of `lemma` (empty when unknown).
+    ///
+    /// Forward lookup is surface → analyses; this is the narrow reverse index
+    /// rules need to propose an agreeing participle without inventing one.
+    pub fn participle_forms(&self, lemma: &str) -> Vec<&str> {
+        let Some(id) = self.lemmas.iter().position(|l| l == lemma) else {
+            return Vec::new();
+        };
+        // ponytail: linear scan over ~12k rows, error path only; index it if ever hot
+        self.lp_forms
+            .iter()
+            .filter(|(lid, _)| *lid == id as u32)
+            .map(|(_, s)| s.as_str())
+            .collect()
+    }
+
     /// Serialise a morphology table.
     ///
     /// `entries` maps each surface form to its readings, a reading being a
@@ -279,6 +302,7 @@ impl Morphology {
         let mut tagset_ids: BTreeMap<Vec<u16>, u32> = BTreeMap::new();
 
         let mut table: Vec<Vec<(u32, u32)>> = Vec::with_capacity(entries.len());
+        let mut lp_forms: Vec<(u32, String)> = Vec::new();
         let mut fst_builder = MapBuilder::memory();
 
         for (surface, readings) in entries {
@@ -302,6 +326,12 @@ impl Morphology {
                     (tagsets.len() - 1) as u32
                 });
                 packed.push((lemma_id, tagset_id));
+            }
+            // Reverse index input: one row per л-participle reading.
+            for (lemma_id, tagset_id) in packed.iter() {
+                if tagsets[*tagset_id as usize].iter().any(|&t| vocab[t as usize] == "lp") {
+                    lp_forms.push((*lemma_id, surface.clone()));
+                }
             }
             fst_builder.insert(surface, table.len() as u64)?;
             table.push(packed);
@@ -332,6 +362,15 @@ impl Morphology {
                 out.extend_from_slice(&lemma_id.to_le_bytes());
                 out.extend_from_slice(&tagset_id.to_le_bytes());
             }
+        }
+
+        lp_forms.sort_unstable();
+        lp_forms.dedup();
+        out.extend_from_slice(&(lp_forms.len() as u32).to_le_bytes());
+        for (lemma_id, surface) in &lp_forms {
+            out.extend_from_slice(&lemma_id.to_le_bytes());
+            out.extend_from_slice(&(surface.len() as u16).to_le_bytes());
+            out.extend_from_slice(surface.as_bytes());
         }
 
         Ok(out)
@@ -383,7 +422,22 @@ impl Morphology {
             entries.push(readings);
         }
 
-        Ok(Self { map, vocab, lemmas, tagsets, entries })
+        let lp_count = r.u32()? as usize;
+        let mut lp_forms = Vec::with_capacity(lp_count);
+        for _ in 0..lp_count {
+            let lemma_id = r.u32()?;
+            if lemma_id as usize >= lemmas.len() {
+                return Err(Error::BadIndex);
+            }
+            let len = r.u16()? as usize;
+            let bytes = r.take(len)?;
+            lp_forms.push((
+                lemma_id,
+                std::str::from_utf8(bytes).map_err(|_| Error::BadUtf8)?.to_string(),
+            ));
+        }
+
+        Ok(Self { map, vocab, lemmas, tagsets, entries, lp_forms })
     }
 }
 
@@ -551,8 +605,30 @@ mod tests {
     }
 
     #[test]
+    fn reverse_lookup_lists_a_lemmas_participles() {
+        let m = sample();
+        let mut forms = m.participle_forms("дојде");
+        forms.sort_unstable();
+        assert_eq!(forms, vec!["дошла", "дошол"]);
+        assert!(m.participle_forms("книга").is_empty());
+        assert!(m.participle_forms("непостоечка").is_empty());
+    }
+
+    #[test]
+    fn rejects_the_previous_format_version() {
+        let mut bytes = Morphology::build(
+            &[("книга".to_string(), vec![("книга".to_string(), tags(&["n"]))])]
+                .into_iter()
+                .collect(),
+        )
+        .unwrap();
+        bytes[..8].copy_from_slice(b"MKMORPH1");
+        assert!(matches!(Morphology::from_bytes(&bytes), Err(Error::BadMagic)));
+    }
+
+    #[test]
     fn rejects_corrupt_input() {
         assert!(matches!(Morphology::from_bytes(b"not a morph file"), Err(Error::BadMagic)));
-        assert!(matches!(Morphology::from_bytes(b"MKMORPH1"), Err(Error::Truncated)));
+        assert!(matches!(Morphology::from_bytes(b"MKMORPH1"), Err(Error::BadMagic)));
     }
 }

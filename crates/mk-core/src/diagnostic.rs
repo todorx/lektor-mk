@@ -31,6 +31,8 @@ pub mod rule {
     pub const CLITIC_ORDER: &str = "MK_CLITIC_ORDER";
     /// Bare `и` where the dative clitic `ѝ` belongs.
     pub const DATIVE_I: &str = "MK_DATIVE_I";
+    /// An л-participle disagreeing with its subject: `таа дошол` ✗.
+    pub const L_PARTICIPLE: &str = "MK_L_PARTICIPLE";
 }
 
 /// One problem found in the text.

@@ -32,6 +32,7 @@ pub fn check(tokens: &[Token<'_>], morph: &Morphology) -> Vec<Diagnostic> {
     double_definite_article(tokens, morph, &mut out);
     clitic_order(tokens, morph, &mut out);
     dative_i(tokens, morph, &mut out);
+    l_participle(tokens, morph, &mut out);
     out
 }
 
@@ -195,6 +196,82 @@ fn dative_i(tokens: &[Token<'_>], morph: &Morphology, out: &mut Vec<Diagnostic>)
     }
 }
 
+/// An л-participle agreeing with its subject: `таа дошла` ✓, `таа дошол` ✗.
+///
+/// Adjacent `[subject-pronoun, l-participle]` only — `тој е дошол` with an
+/// auxiliary between is future work. Fires only when no reading pair agrees
+/// in gender and number; the suggestion reuses a stored form of the same
+/// lemma, and is omitted when none matches.
+fn l_participle(tokens: &[Token<'_>], morph: &Morphology, out: &mut Vec<Diagnostic>) {
+    for pair in tokens.windows(2) {
+        let (subj, part) = (&pair[0], &pair[1]);
+        if subj.kind != TokenKind::Word || part.kind != TokenKind::Word {
+            continue;
+        }
+        let subj_readings = morph.analyze(subj.text);
+        let part_readings = morph.analyze(part.text);
+        if subj_readings.is_empty() || part_readings.is_empty() {
+            continue;
+        }
+        let subj_forms: Vec<(Gender, Number)> = subj_readings
+            .iter()
+            .filter(|a| a.pos() == Some(Pos::Pronoun))
+            .filter_map(|a| Some((a.gender()?, a.number()?)))
+            .collect();
+        let part_forms: Vec<(Gender, Number, &str)> = part_readings
+            .iter()
+            .filter(|a| a.is_l_participle())
+            .filter_map(|a| Some((a.gender()?, a.number()?, a.lemma())))
+            .collect();
+        if subj_forms.is_empty() || part_forms.is_empty() {
+            continue;
+        }
+        let agrees = subj_forms.iter().any(|(sg, sn)| {
+            part_forms.iter().any(|(pg, pn, _)| compatible(*sg, *pg) && sn == pn)
+        });
+        if agrees {
+            continue;
+        }
+        let (sg, sn) = subj_forms[0];
+        let lemma = part_forms[0].2.to_string();
+        // The agreeing surface form, when one is stored (never invented).
+        let fix = best_participle_form(morph, &lemma, sg, sn)
+            .map(|f| vec![format!("{} {}", subj.text, f)])
+            .unwrap_or_default();
+        out.push(Diagnostic {
+            rule: rule::L_PARTICIPLE.to_string(),
+            severity: Severity::Error,
+            char_start: subj.char_start,
+            char_end: part.char_end,
+            text: format!("{} {}", subj.text, part.text),
+            message: "Л-партиципот мора да се сложува со подметот во род и број.".to_string(),
+            suggestions: fix,
+        });
+    }
+}
+
+/// A stored л-participle surface form of `lemma` agreeing with `(gender, number)`.
+/// Never invents a form: no match means no suggestion.
+fn best_participle_form(
+    morph: &Morphology,
+    lemma: &str,
+    gender: Gender,
+    number: Number,
+) -> Option<String> {
+    morph
+        .participle_forms(lemma)
+        .into_iter()
+        .filter(|f| {
+            morph.analyze(f).iter().any(|a| {
+                a.is_l_participle()
+                    && a.number() == Some(number)
+                    && a.gender().is_some_and(|g| compatible(g, gender))
+            })
+        })
+        .next()
+        .map(str::to_string)
+}
+
 /// The bare form of the noun, so the suggestion can drop the second article.
 ///
 /// The lemma is the indefinite singular, so it works directly for singulars.
@@ -255,6 +332,11 @@ mod tests {
         add("даде", "даде", &["vblex", "perf", "tv", "aor", "p3", "sg"]);
         add("таа", "таа", &["prn", "pers", "p3", "f", "sg", "nom"]);
         add("тој", "тој", &["prn", "pers", "p3", "m", "sg", "nom"]);
+        add("тоа", "тоа", &["prn", "pers", "p3", "nt", "sg", "nom"]);
+        add("тие", "free", &["prn", "pers", "p3", "mfn", "pl", "nom"]);
+        add("дошол", "дојде", &["vblex", "perf", "lp", "m", "sg"]);
+        add("дошла", "дојде", &["vblex", "perf", "lp", "f", "sg"]);
+        add("дошле", "дојде", &["vblex", "perf", "lp", "mfn", "pl"]);
         add("ѝ", "clitic", &["prn", "pers", "clt", "p3", "f", "sg", "dat"]);
         add("и", "clitic", &["prn", "pers", "clt", "p3", "f", "sg", "dat"]);
         add("и", "и", &["cnjcoo"]);
@@ -362,5 +444,26 @@ mod tests {
     fn dative_i_stays_silent_after_a_verb() {
         // "пее и го гледа" — и here is the conjunction, not the clitic.
         assert!(run("таа пее и го даде").is_empty());
+    }
+
+    #[test]
+    fn flags_wrong_participle_gender() {
+        assert!(run("таа дошла").is_empty());
+        assert!(run("тој дошол").is_empty());
+        assert!(run("тие дошле").is_empty());
+        let found = run("таа дошол");
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].rule, rule::L_PARTICIPLE);
+        assert_eq!(found[0].suggestions, vec!["таа дошла".to_string()]);
+    }
+
+    #[test]
+    fn flags_wrong_participle_number_without_a_guess_it_cannot_make() {
+        // тоа + дошол: neuter subject, masculine participle — fires, and no
+        // neuter form is stored, so there is no suggestion to offer.
+        let found = run("тоа дошол");
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].rule, rule::L_PARTICIPLE);
+        assert!(found[0].suggestions.is_empty(), "{:?}", found[0].suggestions);
     }
 }
