@@ -41,6 +41,8 @@ pub mod rule {
     pub const SENTENCE_CAPITAL: &str = "MK_SENTENCE_CAPITAL";
     /// `по` split from its comparative: `по добар` ✗, `подобар` ✓.
     pub const PO_SEPARATED: &str = "MK_PO_SEPARATED";
+    /// Whitespace before closing punctuation: `здраво ,` ✗.
+    pub const SPACE_BEFORE_PUNCT: &str = "MK_SPACE_BEFORE_PUNCT";
 }
 
 /// One problem found in the text.

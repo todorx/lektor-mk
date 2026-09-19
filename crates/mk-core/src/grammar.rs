@@ -41,6 +41,7 @@ pub fn check(
     naj_separated(tokens, lexicon, morph, &mut out);
     sentence_capital(tokens, lexicon, &mut out);
     po_separated(tokens, lexicon, morph, &mut out);
+    space_before_punct(tokens, &mut out);
     out
 }
 
@@ -395,6 +396,40 @@ fn sentence_capital(
             text: t.text.to_string(),
             message: "Реченицата почнува со голема буква.".to_string(),
             suggestions: vec![capitalize_first(t.text)],
+        });
+    }
+}
+
+fn space_before_punct(tokens: &[Token<'_>], out: &mut Vec<Diagnostic>) {
+    const CLOSERS: &[&str] = &[",", ".", "!", "?", ":", ";", "…", "”", "’", ")"];
+    for i in 0..tokens.len().saturating_sub(1) {
+        let (prev, curr) = (&tokens[i], &tokens[i + 1]);
+        if curr.kind != TokenKind::Punct || !CLOSERS.contains(&curr.text) {
+            continue;
+        }
+        if !matches!(prev.kind, TokenKind::Word | TokenKind::Number) {
+            continue;
+        }
+        if curr.byte_start == prev.byte_end {
+            continue;
+        }
+        // A colon/semicolon glued to following punctuation opens an emoticon
+        // (:-) ;-) :)) — not closing punctuation, so the gap before it is fine.
+        if (curr.text == ":" || curr.text == ";")
+            && tokens.get(i + 2).is_some_and(|n| {
+                n.kind == TokenKind::Punct && n.byte_start == curr.byte_end
+            })
+        {
+            continue;
+        }
+        out.push(Diagnostic {
+            rule: rule::SPACE_BEFORE_PUNCT.to_string(),
+            severity: Severity::Warning,
+            char_start: prev.char_end,
+            char_end: curr.char_end,
+            text: format!(" {}", curr.text),
+            message: "Нема белина пред интерпункциски знак.".to_string(),
+            suggestions: vec![curr.text.to_string()],
         });
     }
 }
@@ -838,5 +873,19 @@ mod tests {
     fn only_uppercases_never_lowercases() {
         assert!(run("Тој рече: оди си дома.").is_empty());
         assert!(run("Утре ќе врне.").is_empty());
+    }
+
+    #[test]
+    fn flags_space_before_a_comma() {
+        let found = run("Тој дојде , а таа не.");
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].rule, rule::SPACE_BEFORE_PUNCT);
+        assert_eq!(found[0].suggestions, vec![",".to_string()]);
+    }
+
+    #[test]
+    fn leaves_emoticons_and_abbreviations_alone() {
+        assert!(run("Тој дојде :-)").is_empty());
+        assert!(run("Се виде со г. Петров.").is_empty());
     }
 }
