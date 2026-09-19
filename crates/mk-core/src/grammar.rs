@@ -366,6 +366,16 @@ fn po_separated(
                 continue;
             }
         }
+        // Attributive comparatives fuse in standard language, so `по Adj Noun`
+        // (`по железнички пат`, `по стар пат`) is a prepositional phrase,
+        // never a split comparative: silence wins.
+        if let Some(next) = tokens.get(i + 2) {
+            if next.kind == TokenKind::Word
+                && morph.analyze(next.text).iter().any(|a| a.pos() == Some(Pos::Noun))
+            {
+                continue;
+            }
+        }
         let fused = format!("по{}", second.text.to_lowercase());
         if !lexicon.contains(&fused) && morph.analyze(&fused).is_empty() {
             continue;
@@ -425,12 +435,21 @@ fn sentence_capital(
             if tokens[i - 2].kind == TokenKind::Number {
                 continue;
             }
-            // Ellipsis right after an opening quote: „…обединувајќи.
-            if tokens[i - 1].text == "…"
-                && tokens[i - 2].kind == TokenKind::Punct
-                && ["„", "\"", "«", "'", "‘"].contains(&tokens[i - 2].text)
-            {
-                continue;
+            // Ellipsis right after an opening quote: „…X or „...X. Each dot
+            // is its own token, so walk back over the dot-run to the opener.
+            if tokens[i - 1].text.chars().all(|c| c == '.' || c == '…') {
+                let mut j = i - 1;
+                while j > 0
+                    && tokens[j].kind == TokenKind::Punct
+                    && tokens[j].text.chars().all(|c| c == '.' || c == '…')
+                {
+                    j -= 1;
+                }
+                if tokens[j].kind == TokenKind::Punct
+                    && ["„", "\"", "«", "'", "‘"].contains(&tokens[j].text)
+                {
+                    continue;
+                }
             }
             // URLs glued both sides: град.ск (dot byte-adjacent left AND
             // (byte-adjacent right OR next word ≤ 3 chars)).
@@ -673,6 +692,7 @@ mod tests {
         add("најдобар", "добар", &["pref", "sup", "adj", "m", "sg", "nom", "ind"]);
         add("подобар", "добар", &["pref", "comp", "adj", "m", "sg", "nom", "ind"]);
         add("пат", "пат", &["n", "m", "sg", "nom", "ind"]);
+        add("стар", "стар", &["adj", "m", "sg", "nom", "ind"]);
         // precision-guard probes: definiteness + POS of по-frames
         add("успешно", "успешен", &["adj", "nt", "sg", "nom", "ind"]);
         add("успешно", "успешно", &["adv"]);
@@ -695,7 +715,7 @@ mod tests {
                     "тој", "таа", "тоа", "тие", "ми", "го", "ја", "им", "даде", "остави",
                     "дошол", "дошла", "дошле", "водел", "водела", "убавата", "книгата",
                     "книга", "и", "ѝ", "не", "сака", "пријател", "мој", "добар",
-                    "непријател", "нестане", "најдобар", "подобар", "утре",
+                    "непријател", "нестане", "најдобар", "подобар", "утре", "постар",
                     "па", "ск", "град", "дома", "рече", "обединувајќи", "ги",
                     "сите", "точка", "стоеше", "сам", "продолжи", "итн",
                     "поуспешно",
@@ -920,6 +940,17 @@ mod tests {
     #[test]
     fn po_before_a_plain_noun_stays_silent() {
         assert!(run("Тој оди по пат").is_empty());
+    }
+
+    #[test]
+    fn po_ignores_attributive_adjective_noun() {
+        // Attributive comparatives fuse; `по стар пат` is prepositional.
+        assert!(run("Тој оди по стар пат").is_empty());
+    }
+
+    #[test]
+    fn sentence_ignores_ascii_ellipsis_after_quote() {
+        assert!(run("Тој рече „... обединувајќи ги сите.").is_empty());
     }
 
     #[test]
