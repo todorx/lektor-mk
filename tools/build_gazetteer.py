@@ -95,6 +95,15 @@ def main():
                     for part in line.split():
                         consider(part)
     kept = sorted(set(kept))
+    # Never shrink the curated file: a crawl that finds nothing (changed hub
+    # contents, API hiccup) must fail loudly instead of wiping reviewed names.
+    existing = 0
+    if os.path.exists(OUT):
+        with open(OUT, encoding="utf-8") as fh:
+            existing = sum(1 for l in fh if l.strip() and not l.startswith("#"))
+    if len(kept) < existing:
+        print(f"GAZETTEER-REFUSED kept={len(kept)} existing={existing}: crawl found less, file untouched")
+        raise SystemExit(1)
     with open(OUT, "w", encoding="utf-8") as fh:
         fh.write("# Proper-noun gazetteer: Macedonian Wikipedia link titles\n")
         fh.write("# (people, places, works) absent from the wordlist and paradigms.\n")
@@ -108,3 +117,4 @@ if __name__ == "__main__":
         main()
     except Exception as e:
         print("GAZETTEER-FAILED " + ascii(str(e))[:200])
+        raise SystemExit(1)

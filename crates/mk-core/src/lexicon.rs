@@ -140,7 +140,7 @@ pub fn confusion_cost(a: char, b: char) -> u32 {
 
 /// Aligned confusion cost between `query` and `candidate`, plus 2 per
 /// length difference. Cheap proxy, not a full alignment.
-fn weighted_cost(query: &[char], candidate: &[char]) -> u32 {
+pub fn weighted_cost(query: &[char], candidate: &[char]) -> u32 {
     let shared = query.len().min(candidate.len());
     let mut cost = 0u32;
     for i in 0..shared {

@@ -240,7 +240,15 @@ impl Checker {
     fn ranked_suggestions(&self, word: &str) -> Vec<String> {
         let mut hits = self.lexicon.suggest(word, MAX_SUGGESTIONS * 4);
         if let Some(f) = &self.frequency {
-            hits.sort_by_cached_key(|c| (std::cmp::Reverse(f.get(&c.to_lowercase())), c.clone()));
+            let qchars: Vec<char> = word.to_lowercase().chars().collect();
+            hits.sort_by_cached_key(|c| {
+                let cchars: Vec<char> = c.chars().collect();
+                (
+                    std::cmp::Reverse(f.get(&c.to_lowercase())),
+                    crate::lexicon::weighted_cost(&qchars, &cchars),
+                    c.clone(),
+                )
+            });
             hits.truncate(MAX_SUGGESTIONS);
         } else {
             hits.truncate(MAX_SUGGESTIONS);
@@ -307,6 +315,20 @@ mod tests {
         let got = ranked.check("книгаи");
         assert_eq!(got.len(), 1);
         assert_eq!(got[0].suggestions.first().map(String::as_str), Some("книги"));
+    }
+
+    #[test]
+    fn frequency_ties_fall_back_to_confusion_cost() {
+        use crate::frequency::Frequency;
+        // Neither candidate is in the table: equal frequency, so the
+        // confusable ќ must still beat м for the query "как".
+        let base =
+            Checker::new(Lexicon::build_from_unsorted(["ќак", "мак"]).unwrap()).unwrap();
+        let freq =
+            Frequency::from_bytes(&Frequency::build(&[("некојдруг", 7)]).unwrap()).unwrap();
+        let got = base.with_frequency(freq).check("как");
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].suggestions.first().map(String::as_str), Some("ќак"));
     }
 
     #[test]
