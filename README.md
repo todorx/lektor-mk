@@ -151,6 +151,9 @@ invisible to a reader.
 | `MK_L_PARTICIPLE` | л-participle disagreeing with its subject: `таа дошол` ✗ |
 | `MK_NE_FUSED` | `не` fused to a finite verb: `несака` ✗, `не сака` ✓ |
 | `MK_NAJ_SEPARATED` | `нај` split from its word: `нај добар` ✗, `најдобар` ✓ |
+| `MK_SENTENCE_CAPITAL` | Lowercase sentence start: `Тој дојде. утре ќе врне` ✗, `Утре` ✓ |
+| `MK_PO_SEPARATED` | `по` split from the graded word: `по добар` ✗, `подобар` ✓ |
+| `MK_SPACE_BEFORE_PUNCT` | Space before closing punctuation: `Тој дојде ,` ✗, `дојде,` ✓ |
 
 Suggestions are frequency-ranked (Wikipedia counts) with Macedonian
 confusion costs (`к/ќ`, `е/ѐ`), falling back to edit-distance order when
