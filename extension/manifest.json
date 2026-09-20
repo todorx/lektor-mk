@@ -30,5 +30,5 @@
       "run_at": "document_idle"
     }
   ],
-  "web_accessible_resources": ["mk_pkg/mk_wasm_bg.wasm", "mk.fst", "mk.morph", "mk.freq"]
+  "web_accessible_resources": ["mk_pkg/mk_wasm_bg.wasm", "mk.fst", "mk.morph", "mk.freq", "mk.bigram"]
 }

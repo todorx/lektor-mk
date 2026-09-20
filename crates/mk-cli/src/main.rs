@@ -20,16 +20,19 @@ USAGE:
     mk build-lexicon <wordlist.txt>... <out.fst>
     mk build-morph <morph.tsv> <out.morph>
     mk build-freq <freq.tsv> <out.freq>
+    mk build-bigram <bigrams.tsv> <out.bigram>
     mk analyze <morph> <word>...
     mk check <lexicon.fst> <text>
     mk check <lexicon.fst> --file <path> [--json]
     mk check <lexicon.fst> --stdin [--json]
 
 Add --morph <mk.morph> to any check to enable the grammar rules.
+Add --freq <mk.freq> for frequency-ranked suggestions, --bigram
+<mk.bigram> for bigram-aware ranking and autocomplete counts.
 ";
 
 /// Flags that consume the argument after them.
-const FLAGS_WITH_VALUES: &[&str] = &["--file", "--morph", "--freq"];
+const FLAGS_WITH_VALUES: &[&str] = &["--file", "--morph", "--freq", "--bigram"];
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -37,6 +40,7 @@ fn main() -> ExitCode {
         Some("build-lexicon") => build_lexicon(&args[1..]),
         Some("build-morph") => build_morph(&args[1..]),
         Some("build-freq") => build_freq(&args[1..]),
+        Some("build-bigram") => build_bigram(&args[1..]),
         Some("analyze") => analyze(&args[1..]),
         Some("check") => check(&args[1..]),
         Some("-h") | Some("--help") | None => {
@@ -140,6 +144,44 @@ fn build_morph(args: &[String]) -> Result<bool, String> {
     Ok(false)
 }
 
+/// Parse a freq TSV (word TAB count) into entries, naming the file and
+/// line of the first bad count instead of failing anonymously.
+fn parse_freq_tsv(input: &str, text: &str) -> Result<Vec<(String, u32)>, String> {
+    let mut entries: Vec<(String, u32)> = Vec::new();
+    for (lineno, line) in text.lines().enumerate() {
+        let mut cols = line.split('\t');
+        let (Some(w), Some(n)) = (cols.next(), cols.next()) else { continue };
+        if w.is_empty() {
+            continue;
+        }
+        let n: u32 = n
+            .trim()
+            .parse()
+            .map_err(|_| format!("bad count on line {} in {input}", lineno + 1))?;
+        entries.push((w.to_string(), n));
+    }
+    Ok(entries)
+}
+
+/// Parse a bigram TSV (prev TAB word TAB count) into entries, naming the
+/// file and line of the first bad count instead of failing anonymously.
+fn parse_bigram_tsv(input: &str, text: &str) -> Result<Vec<(String, String, u32)>, String> {
+    let mut entries: Vec<(String, String, u32)> = Vec::new();
+    for (lineno, line) in text.lines().enumerate() {
+        let mut cols = line.split('\t');
+        let (Some(a), Some(b), Some(n)) = (cols.next(), cols.next(), cols.next()) else { continue };
+        if a.is_empty() || b.is_empty() {
+            continue;
+        }
+        let n: u32 = n
+            .trim()
+            .parse()
+            .map_err(|_| format!("bad count on line {} in {input}", lineno + 1))?;
+        entries.push((a.to_string(), b.to_string(), n));
+    }
+    Ok(entries)
+}
+
 /// Compile the TSV produced by `tools/build_freq.py` into a freq blob.
 fn build_freq(args: &[String]) -> Result<bool, String> {
     use mk_core::frequency::Frequency;
@@ -147,20 +189,27 @@ fn build_freq(args: &[String]) -> Result<bool, String> {
         return Err(format!("build-freq needs an input and an output path\n\n{USAGE}"));
     };
     let text = std::fs::read_to_string(input).map_err(|e| format!("reading {input}: {e}"))?;
-    let mut entries: Vec<(String, u32)> = Vec::new();
-    for line in text.lines() {
-        let mut cols = line.split('\t');
-        let (Some(w), Some(n)) = (cols.next(), cols.next()) else { continue };
-        if w.is_empty() {
-            continue;
-        }
-        let n: u32 = n.trim().parse().map_err(|_| format!("bad count in {input}"))?;
-        entries.push((w.to_string(), n));
-    }
+    let entries = parse_freq_tsv(input, &text)?;
     let refs: Vec<(&str, u32)> = entries.iter().map(|(w, n)| (w.as_str(), *n)).collect();
     let bytes = Frequency::build(&refs).map_err(|e| format!("building frequency: {e}"))?;
     std::fs::write(output, &bytes).map_err(|e| format!("writing {output}: {e}"))?;
     eprintln!("freq      {} words -> {output}", entries.len());
+    Ok(false)
+}
+
+/// Compile the TSV produced by `tools/build_bigrams.py` into a bigram blob.
+fn build_bigram(args: &[String]) -> Result<bool, String> {
+    use mk_core::bigram::Bigram;
+    let [input, output] = args else {
+        return Err(format!("build-bigram needs an input and an output path\n\n{USAGE}"));
+    };
+    let text = std::fs::read_to_string(input).map_err(|e| format!("reading {input}: {e}"))?;
+    let entries = parse_bigram_tsv(input, &text)?;
+    let refs: Vec<(&str, &str, u32)> =
+        entries.iter().map(|(a, b, n)| (a.as_str(), b.as_str(), *n)).collect();
+    let bytes = Bigram::build(&refs).map_err(|e| format!("building bigram: {e}"))?;
+    std::fs::write(output, &bytes).map_err(|e| format!("writing {output}: {e}"))?;
+    eprintln!("bigram    {} pairs -> {output}  {:.2} MB", entries.len(), bytes.len() as f64 / 1e6);
     Ok(false)
 }
 
@@ -241,6 +290,13 @@ fn check(args: &[String]) -> Result<bool, String> {
             .map_err(|e| format!("loading {path}: {e}"))?;
         checker = checker.with_frequency(freq);
     }
+    if let Some(pos) = rest.iter().position(|a| a == "--bigram") {
+        let path = rest.get(pos + 1).ok_or("--bigram needs a path")?;
+        let raw = std::fs::read(path).map_err(|e| format!("reading {path}: {e}"))?;
+        let bigram =
+            mk_core::bigram::Bigram::from_bytes(&raw).map_err(|e| format!("loading {path}: {e}"))?;
+        checker = checker.with_bigram(bigram);
+    }
 
     let started = std::time::Instant::now();
     let found = checker.check(&text);
@@ -275,4 +331,41 @@ fn check(args: &[String]) -> Result<bool, String> {
     }
 
     Ok(!found.is_empty())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn freq_bad_count_names_line() {
+        let err = parse_freq_tsv("f.tsv", "a\t1\nb\t2\nc\tXYZ\n").unwrap_err();
+        assert!(err.contains("line 3"), "{err}");
+        assert!(err.contains("f.tsv"), "{err}");
+    }
+
+    #[test]
+    fn freq_skips_blank_and_short_rows() {
+        let got = parse_freq_tsv("f.tsv", "a\t1\n\nbadrow\n\t\nc\t3\n").unwrap();
+        assert_eq!(got, vec![("a".to_string(), 1), ("c".to_string(), 3)]);
+    }
+
+    #[test]
+    fn bigram_bad_count_names_line() {
+        let err = parse_bigram_tsv("b.tsv", "a\tb\t1\nc\td\tZZZ\n").unwrap_err();
+        assert!(err.contains("line 2"), "{err}");
+        assert!(err.contains("b.tsv"), "{err}");
+    }
+
+    #[test]
+    fn bigram_skips_blank_and_short_rows() {
+        let got = parse_bigram_tsv("b.tsv", "a\tb\t1\n\nlonely\nc\td\t4\n").unwrap();
+        assert_eq!(
+            got,
+            vec![
+                ("a".to_string(), "b".to_string(), 1),
+                ("c".to_string(), "d".to_string(), 4)
+            ]
+        );
+    }
 }

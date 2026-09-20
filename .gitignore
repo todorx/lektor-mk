@@ -8,6 +8,7 @@
 # Compiled lexicon — rebuilt with `mk build-lexicon`
 /data/*.fst
 /data/*.freq
+/data/*.bigram
 
 node_modules/
 /extension/.output/
@@ -16,6 +17,7 @@ node_modules/
 /extension/mk.fst
 /extension/mk.morph
 /extension/mk.freq
+/extension/mk.bigram
 /tools/bin/
 
 .worktrees/

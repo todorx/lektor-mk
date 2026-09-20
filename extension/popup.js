@@ -52,6 +52,56 @@ $("siteOn").addEventListener("change", async (e) => {
 
 $("options").addEventListener("click", () => browser.runtime.openOptionsPage());
 
+// Autocomplete in the quick-check box: complete the word being typed from
+// bigram counts. Fires only with a previous word and 2+ letters typed,
+// so it stays silent until it can actually help.
+let suggestTimer = 0;
+let suggestSeq = 0;
+$("in").addEventListener("input", () => {
+  clearTimeout(suggestTimer);
+  suggestTimer = setTimeout(suggestNow, 150);
+});
+
+async function suggestNow() {
+  const box = $("suggest");
+  const el = $("in");
+  const pos = el.selectionStart;
+  // Only complete at end of a word: with a mid-word cursor the insert
+  // (head + slice(pos)) would duplicate the word's tail.
+  if (pos < el.value.length && !/\s/.test(el.value[pos])) {
+    box.innerHTML = "";
+    return;
+  }
+  const before = el.value.slice(0, pos).match(/(\S+)\s+(\S*)$/);
+  if (!before) {
+    box.innerHTML = "";
+    return;
+  }
+  const [, prev, prefix] = before;
+  if (prefix.length < 2) {
+    box.innerHTML = "";
+    return;
+  }
+  const my = ++suggestSeq;
+  try {
+    const res = await browser.runtime.sendMessage({ type: "mk-suggest", prev, prefix });
+    if (my !== suggestSeq) return; // stale: a newer keystroke already won
+    const words = res && res.ok ? res.words : [];
+    box.innerHTML = words.map((w) => `<button type="button">${esc(w)}</button>`).join("");
+    box.querySelectorAll("button").forEach((b) =>
+      b.addEventListener("click", () => {
+        const pos = el.selectionStart;
+        const head = el.value.slice(0, pos).replace(/\S+$/, b.textContent);
+        el.value = head + el.value.slice(pos);
+        el.focus();
+        box.innerHTML = "";
+      })
+    );
+  } catch (e) {
+    box.innerHTML = "";
+  }
+}
+
 $("go").addEventListener("click", async () => {
   const out = $("out");
   out.textContent = "Проверува…";

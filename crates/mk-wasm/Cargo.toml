@@ -1,0 +1,15 @@
+[package]
+name = "mk-wasm"
+description = "WebAssembly bridge for the Macedonian checker (Firefox extension)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+mk-core = { path = "../mk-core" }
+wasm-bindgen = { workspace = true }
+serde_json = { workspace = true }

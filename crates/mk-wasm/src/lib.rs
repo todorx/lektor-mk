@@ -55,6 +55,21 @@ impl WasmChecker {
         self.inner.set_frequency(freq);
         Ok(())
     }
+
+    /// Attach bigram-aware ranking. Optional, same contract as frequency.
+    pub fn set_bigram(&mut self, bigram_bytes: Vec<u8>) -> Result<(), JsValue> {
+        let bigram = mk_core::bigram::Bigram::from_bytes(&bigram_bytes)
+            .map_err(|e| JsValue::from_str(&e))?;
+        self.inner.set_bigram(bigram);
+        Ok(())
+    }
+
+    /// Next-word completions of `prefix` after `prev`, as a JSON array string.
+    /// Empty (`[]`) when no bigram table is attached or nothing was seen.
+    pub fn suggest(&self, prev: &str, prefix: &str, limit: usize) -> String {
+        serde_json::to_string(&self.inner.suggest_next(prev, prefix, limit))
+            .unwrap_or_else(|_| "[]".to_string())
+    }
 }
 
 #[cfg(test)]
@@ -91,5 +106,16 @@ mod tests {
         let mut c = tiny_checker();
         let bytes = mk_core::frequency::Frequency::build(&[("книга", 5)]).unwrap();
         assert!(c.set_frequency(bytes).is_ok());
+    }
+
+    #[test]
+    fn bigram_blob_attaches_and_suggests() {
+        let mut c = tiny_checker();
+        let bytes =
+            mk_core::bigram::Bigram::build(&[("тој", "оди", 9), ("тој", "одидома", 1)]).unwrap();
+        assert!(c.set_bigram(bytes).is_ok());
+        let v: serde_json::Value = serde_json::from_str(&c.suggest("тој", "оди", 5)).unwrap();
+        let words: Vec<&str> = v.as_array().unwrap().iter().map(|x| x.as_str().unwrap()).collect();
+        assert_eq!(words.first(), Some(&"оди"));
     }
 }

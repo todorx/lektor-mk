@@ -104,15 +104,22 @@ cargo run --release -p mk-cli -- analyze data/mk.morph книгата дошла
 
 | | |
 |---|---|
-| Lexicon | 357,191 forms → **0.69 MB** FST (13× smaller than the raw list) |
+| Lexicon | 427,464 forms → **1.25 MB** FST (8.2× smaller than the raw list) |
 | Morphology | 161,953 forms, 30,380 lemmas → **2.65 MB** (incl. participle reverse index) |
 | Frequencies | 40,000 words ex Macedonian Wikipedia → **0.86 MB** (`mk.freq`, optional) |
-| Extension total | FST + morph + freq → **4.0 MB**, still local-only and offline |
+| Bigrams | 50,000 pairs ex Macedonian Wikipedia → **1.47 MB** (`mk.bigram`, optional) |
+| Extension total | FST + morph + freq → **4.8 MB**, + bigram → **6.2 MB** (over the 6 MB budget — see below), still local-only and offline |
 | Throughput | 17,782 words in **0.95 s** |
-| Flag rate on Macedonian Wikipedia | 5.13% over 17,105 words (live sample; was 5.06%) |
+| Flag rate on Macedonian Wikipedia | 2.78% over 17,104 words (live sample; was 4.75%) |
 | Morphology coverage | 83.5% of tokens; 70.6% of adjacent pairs |
 | Grammar on Wikipedia | 4 `MK_L_PARTICIPLE` + 3 `MK_SPACE_BEFORE_PUNCT` hits (all verified true), 0 everywhere else |
 | `MK_DOUBLE_DEFINITE` false positives | **0** in 17,782 words of edited prose |
+
+Over budget: the extension totals **6.2 MB**, ~0.2 MB past the 6 MB budget.
+The levers, cheapest first: prune bigrams below 50k pairs (each 10k ≈
+0.3 MB, at the cost of rarer autocomplete contexts); or accept the
+overage — only the FST is required, and morph/freq/bigram each degrade
+gracefully when absent.
 
 That last row is the number the project lives or dies by. The rule catches
 `убавата книгата`, `Големиот градот` and `Новата куќата` while staying silent on
@@ -123,15 +130,17 @@ The 70.6% adjacent-pair figure is the recall ceiling for any rule that inspects
 a bigram: a rule cannot judge a pair it cannot analyse. That is a coverage
 limit, not a precision problem, and it improves as the morphology does.
 
-The flag rate is not an error rate — it is dominated by two known gaps, measured
-over 17,782 words of Wikipedia:
+The flag rate is not an error rate — before the gazetteer it was dominated
+by two known gaps, measured over 17,782 words of Wikipedia:
 
 * **55% proper nouns** (`Глигоров`, `Визбегово`, `Неделковски`). The upstream
-  dictionary contains no names or toponyms at all. Needs a gazetteer.
+  dictionary contains no names or toponyms at all. Covered since by the
+  Wikipedia-title gazetteer (71,109 names), which cut the rate to 2.78%.
 * **45% morphological gaps** (`референдумското`, `старословенскиот`,
   `фонологијата`). All correctly-formed Macedonian the fixed form list never
   enumerated. This is the case for deriving paradigms from apertium-mkd rather
-  than shipping a frozen word list.
+  than shipping a frozen word list. Still open; re-measuring the residual
+  composition against the new baseline is to do.
 
 The script rules fare much better, and found genuine errors *in Wikipedia
 itself*: 13 occurrences of `сè` spelled with Latin `è` (U+00E8) instead of
@@ -159,7 +168,10 @@ invisible to a reader.
 
 Suggestions are frequency-ranked (Wikipedia counts) with Macedonian
 confusion costs (`к/ќ`, `е/ѐ`), falling back to edit-distance order when
-no frequency table is loaded.
+no frequency table is loaded. When the optional bigram table is loaded,
+candidates seen next to the neighbouring words rank first. The same
+counts also power next-word autocomplete (`suggest_next`), used by the
+extension popup.
 
 The two script rules matter more than they look. Latin `а е о с р х у` are pixel
 twins of their Cyrillic counterparts, so contaminated text looks perfect to a

@@ -79,6 +79,9 @@ def main():
     freq = ROOT / "data" / "mk.freq"
     if freq.exists():
         shutil.copy(freq, EXT / "mk.freq")
+    bigram = ROOT / "data" / "mk.bigram"
+    if bigram.exists():
+        shutil.copy(bigram, EXT / "mk.bigram")
     print("done. Load in Firefox via about:debugging -> This Firefox ->")
     print("Load Temporary Add-on -> extension/manifest.json")
 

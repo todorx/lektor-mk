@@ -154,7 +154,7 @@ class Dictionary:
 
 
 def main() -> int:
-    if len(sys.argv) != 3:
+    if len(sys.argv) not in (3, 4):
         print(__doc__)
         return 2
     src, dest = sys.argv[1], sys.argv[2]
@@ -174,6 +174,16 @@ def main() -> int:
     print(f"analyses  : {len(unique)}")
     print(f"surfaces  : {len(distinct_surfaces)} distinct")
     print(f"wrote     : {dest}")
+    if len(sys.argv) == 4:
+        # Single-token surfaces for the spelling lexicon. Multiword names
+        # (Јужна Кореја) and dotted abbreviations (т.н) can never match one
+        # token, and would only pollute fuzzy suggestions.
+        spell = sorted(
+            s for s in distinct_surfaces if s and not any(c.isspace() or c == "." for c in s)
+        )
+        with open(sys.argv[3], "w", encoding="utf-8") as fh:
+            fh.write("\n".join(spell) + "\n")
+        print(f"spell     : {len(spell)} single-token surfaces -> {sys.argv[3]}")
     for key in ("no_lemma", "unexpandable", "missing_pardef", "truncated_entry"):
         if d.stats[key]:
             print(f"  skipped {key}: {d.stats[key]}")

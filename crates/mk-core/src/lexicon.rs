@@ -67,23 +67,29 @@ impl Lexicon {
 
     /// Spelling suggestions for `word`, best first.
     ///
-    /// Tries edit distance 1 before widening to 2, so a near-miss never gets
-    /// buried under more distant candidates.
+    /// Searches edit distance 1 and 2, merges the hits and ranks them, so a
+    /// near-miss never gets buried under more distant candidates while a
+    /// transposition (Levenshtein distance 2, one finger-slip) still gets
+    /// ranked alongside true distance-1 hits — even when distance-1 hits
+    /// alone would fill the candidate cap.
+    // ponytail: per-search stream caps can still cut a hit pre-rank in very
+    // dense neighborhoods (very short words); widen caps if profiles show it.
     pub fn suggest(&self, word: &str, limit: usize) -> Vec<String> {
         let query = word.to_lowercase();
         if query.is_empty() {
             return Vec::new();
         }
 
-        for distance in 1..=2 {
-            let mut hits = self.search_within(&query, distance, limit * 8);
-            if !hits.is_empty() {
-                rank(&query, &mut hits);
-                hits.truncate(limit);
-                return hits;
+        // d=1 ⊆ d=2, so the second search re-yields the first tier; dedup.
+        let mut hits = self.search_within(&query, 1, limit * 8);
+        for h in self.search_within(&query, 2, limit * 8) {
+            if !hits.contains(&h) {
+                hits.push(h);
             }
         }
-        Vec::new()
+        rank(&query, &mut hits);
+        hits.truncate(limit);
+        hits
     }
 
     fn search_within(&self, query: &str, distance: u32, cap: usize) -> Vec<String> {
@@ -140,7 +146,53 @@ pub fn confusion_cost(a: char, b: char) -> u32 {
 
 /// Aligned confusion cost between `query` and `candidate`, plus 2 per
 /// length difference. Cheap proxy, not a full alignment.
+///
+/// A single adjacent transposition (typing two letters in the wrong order)
+/// costs 1 — it is one slip of the fingers, not two substitutions.
+/// A single inserted or deleted letter likewise costs 2, like a single
+/// substitution — not sub-plus-gap, which the positional comparison below
+/// would otherwise manufacture for mid-word indels.
 pub fn weighted_cost(query: &[char], candidate: &[char]) -> u32 {
+    if query.len() == candidate.len() {
+        let diffs: Vec<usize> = query
+            .iter()
+            .zip(candidate.iter())
+            .enumerate()
+            .filter_map(|(i, (a, b))| (a != b).then_some(i))
+            .collect();
+        if diffs.len() == 2
+            && diffs[1] == diffs[0] + 1
+            && query[diffs[0]] == candidate[diffs[1]]
+            && query[diffs[1]] == candidate[diffs[0]]
+        {
+            return 1;
+        }
+    }
+    if query.len().abs_diff(candidate.len()) == 1 {
+        let (longer, shorter) = if query.len() > candidate.len() {
+            (query, candidate)
+        } else {
+            (candidate, query)
+        };
+        // Walk both; allow exactly one skip in `longer`.
+        let mut li = 0usize;
+        let mut skipped = false;
+        let mut aligned = true;
+        for &sc in shorter {
+            if li < longer.len() && longer[li] == sc {
+                li += 1;
+            } else if !skipped && li + 1 < longer.len() && longer[li + 1] == sc {
+                skipped = true;
+                li += 2;
+            } else {
+                aligned = false;
+                break;
+            }
+        }
+        if aligned {
+            return 2;
+        }
+    }
     let shared = query.len().min(candidate.len());
     let mut cost = 0u32;
     for i in 0..shared {
@@ -168,6 +220,30 @@ mod tests {
 
     fn lexicon(words: &[&str]) -> Lexicon {
         Lexicon::from_bytes(Lexicon::build_from_unsorted(words).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn single_insertion_or_deletion_costs_like_single_substitution() {
+        // One inserted/deleted letter is one slip of the fingers, not a
+        // substitution plus a gap: "женна" -> "жена" must cost 2, not 4.
+        let q: Vec<char> = "женна".chars().collect();
+        let del: Vec<char> = "жена".chars().collect();
+        assert_eq!(weighted_cost(&q, &del), 2);
+        assert_eq!(weighted_cost(&del, &q), 2);
+        // End-deletion already cost 2; must stay 2.
+        let kb: Vec<char> = "книг".chars().collect();
+        let kba: Vec<char> = "книга".chars().collect();
+        assert_eq!(weighted_cost(&kb, &kba), 2);
+    }
+
+    #[test]
+    fn single_deletion_survives_a_dense_crowd() {
+        // Regression: "жена" (one deletion from "женна") was truncated out
+        // of the top 5 by cost-4 length-5 neighbours because the positional
+        // cost model scored the deletion as sub-plus-gap.
+        let lex = lexicon(&["жедна", "желна", "женеа", "женка", "желба", "жена"]);
+        let got = lex.suggest("женна", 5);
+        assert!(got.contains(&"жена".to_string()), "got {got:?}");
     }
 
     #[test]
@@ -218,6 +294,26 @@ mod tests {
         let lex = lexicon(&["ќак", "мак", "как"]);
         let got = lex.suggest("как", 3);
         assert_eq!(got.first().map(String::as_str), Some("ќак"), "got {got:?}");
+    }
+
+    #[test]
+    fn transposed_letters_outrank_a_distant_word() {
+        // "книаг" is "книга" with the last two letters swapped — one slip
+        // of the fingers. It must beat "книах", which needs a real substitution.
+        let lex = lexicon(&["книга", "книах"]);
+        let got = lex.suggest("книаг", 3);
+        assert_eq!(got.first().map(String::as_str), Some("книга"), "got {got:?}");
+    }
+
+    #[test]
+    fn transposed_target_survives_a_full_distance1_cap() {
+        // Cap is limit*8; with limit=1 eight d=1 distractors fill it. The
+        // transposed target ("ауб" -> "уаб") lives at d=2 and must still win.
+        let lex = lexicon(&[
+            "буб", "вуб", "губ", "дуб", "жуб", "зуб", "ѕуб", "ќуб", "ааб", "уаб",
+        ]);
+        let got = lex.suggest("ауб", 1);
+        assert_eq!(got, vec!["уаб".to_string()], "got {got:?}");
     }
 
     #[test]

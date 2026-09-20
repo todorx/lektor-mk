@@ -15,6 +15,7 @@
 //! ```
 
 pub mod alphabet;
+pub mod bigram;
 pub mod diagnostic;
 pub mod frequency;
 pub mod grammar;
@@ -52,6 +53,7 @@ pub struct Checker {
     lexicon: Lexicon,
     morphology: Option<morphology::Morphology>,
     frequency: Option<frequency::Frequency>,
+    bigram: Option<bigram::Bigram>,
 }
 
 impl Checker {
@@ -61,6 +63,7 @@ impl Checker {
             lexicon: Lexicon::from_bytes(fst_bytes)?,
             morphology: None,
             frequency: None,
+            bigram: None,
         })
     }
 
@@ -74,6 +77,21 @@ impl Checker {
     pub fn with_frequency(mut self, frequency: frequency::Frequency) -> Self {
         self.frequency = Some(frequency);
         self
+    }
+
+    /// Enable bigram-aware ranking. Missing table = unigram ranking.
+    /// Bigrams only rerank the FST hits already fetched; a pair never seen
+    /// scores 0, so with no bigram hits the order matches the frequency-only
+    /// ranking (or the lexicon's own order when no frequency table either).
+    pub fn with_bigram(mut self, bigram: bigram::Bigram) -> Self {
+        self.bigram = Some(bigram);
+        self
+    }
+
+    /// Attach a bigram table after construction (for WASM-style setup
+    /// where blobs arrive one at a time). Overwrites any previous table.
+    pub fn set_bigram(&mut self, bigram: bigram::Bigram) {
+        self.bigram = Some(bigram);
     }
 
     /// Attach a frequency table after construction (for WASM-style setup
@@ -117,9 +135,22 @@ impl Checker {
             if token.text.chars().any(|c| c.is_numeric()) {
                 continue;
             }
-            if let Some(d) =
-                self.check_word(token.text, token.char_start, token.char_end, in_latin_run[i])
-            {
+            // Neighbouring words for bigram ranking, lowercased. Only the
+            // spelling path uses them; homoglyph/latin paths ignore context.
+            let prev = if i > 0 {
+                words.get(i - 1).map(|t| t.text.to_lowercase())
+            } else {
+                None
+            };
+            let next = words.get(i + 1).map(|t| t.text.to_lowercase());
+            if let Some(d) = self.check_word(
+                token.text,
+                token.char_start,
+                token.char_end,
+                in_latin_run[i],
+                prev.as_deref(),
+                next.as_deref(),
+            ) {
                 out.push(d);
             }
         }
@@ -140,6 +171,8 @@ impl Checker {
         start: usize,
         end: usize,
         in_latin_run: bool,
+        prev: Option<&str>,
+        next: Option<&str>,
     ) -> Option<Diagnostic> {
         // 1. Characters that are not Macedonian at all.
         if let Some(issue) = homoglyph::analyze(word) {
@@ -236,29 +269,47 @@ impl Checker {
             char_end: end,
             text: word.to_string(),
             message: "Непознат збор.".to_string(),
-            suggestions: self.ranked_suggestions(word),
+            suggestions: self.ranked_suggestions(word, prev, next),
         })
     }
 
-    /// FST hits reranked by frequency when a table is loaded.
-    /// No table = the lexicon's own order. Never invents candidates.
-    fn ranked_suggestions(&self, word: &str) -> Vec<String> {
+    /// FST hits reranked by bigram context, then frequency, when tables are
+    /// loaded. No tables = the lexicon's own order. Never invents candidates.
+    fn ranked_suggestions(&self, word: &str, prev: Option<&str>, next: Option<&str>) -> Vec<String> {
         let mut hits = self.lexicon.suggest(word, MAX_SUGGESTIONS * 4);
-        if let Some(f) = &self.frequency {
-            let qchars: Vec<char> = word.to_lowercase().chars().collect();
-            hits.sort_by_cached_key(|c| {
-                let cchars: Vec<char> = c.chars().collect();
-                (
-                    std::cmp::Reverse(f.get(&c.to_lowercase())),
-                    crate::lexicon::weighted_cost(&qchars, &cchars),
-                    c.clone(),
-                )
-            });
+        if self.frequency.is_none() && self.bigram.is_none() {
             hits.truncate(MAX_SUGGESTIONS);
-        } else {
-            hits.truncate(MAX_SUGGESTIONS);
+            return hits;
         }
+        let qchars: Vec<char> = word.to_lowercase().chars().collect();
+        hits.sort_by_cached_key(|c| {
+            let cchars: Vec<char> = c.chars().collect();
+            let clower = c.to_lowercase();
+            let bi = match &self.bigram {
+                Some(b) => {
+                    prev.map_or(0, |p| b.get(p, &clower)) + next.map_or(0, |n| b.get(&clower, n))
+                }
+                None => 0,
+            };
+            (
+                std::cmp::Reverse(bi),
+                std::cmp::Reverse(self.frequency.as_ref().map_or(0, |f| f.get(&clower))),
+                crate::lexicon::weighted_cost(&qchars, &cchars),
+                c.clone(),
+            )
+        });
+        hits.truncate(MAX_SUGGESTIONS);
         hits
+    }
+
+    /// Next-word completions of `prefix` after `prev`, most likely first.
+    /// Bigram-only: empty when no table is loaded or nothing was seen.
+    /// Never invents candidates; the extension uses this for autocomplete.
+    pub fn suggest_next(&self, prev: &str, prefix: &str, limit: usize) -> Vec<String> {
+        match &self.bigram {
+            Some(b) => b.top_next(prev, prefix, limit).into_iter().map(|(w, _)| w).collect(),
+            None => Vec::new(),
+        }
     }
 
     /// `црно-бел` will not be in the lexicon, but both halves are. Accept the
@@ -312,7 +363,7 @@ mod tests {
     #[test]
     fn frequency_table_promotes_the_common_word() {
         use crate::frequency::Frequency;
-        let words = ["книга", "книги", "книгата"];
+        let words = ["книга", "книги", "книгата", "убава"];
         let base = Checker::new(Lexicon::build_from_unsorted(words).unwrap()).unwrap();
         let freq = Frequency::from_bytes(&Frequency::build(&[("книги", 900), ("книга", 1)]).unwrap())
             .unwrap();
@@ -334,6 +385,76 @@ mod tests {
         let got = base.with_frequency(freq).check("как");
         assert_eq!(got.len(), 1);
         assert_eq!(got[0].suggestions.first().map(String::as_str), Some("ќак"));
+    }
+
+    #[test]
+    fn bigram_context_overrides_unigram_order() {
+        use crate::bigram::Bigram;
+        use crate::frequency::Frequency;
+        // Unigram prefers книги; the bigram after убава prefers книга.
+        let base = Checker::new(Lexicon::build_from_unsorted(["книга", "книги", "книгата", "убава"]).unwrap())
+            .unwrap()
+            .with_frequency(
+                Frequency::from_bytes(&Frequency::build(&[("книги", 900), ("книга", 1)]).unwrap())
+                    .unwrap(),
+            );
+        let plain = base.check("убава книгаи");
+        assert_eq!(plain[0].suggestions.first().map(String::as_str), Some("книги"));
+        let with_bi = base.with_bigram(
+            Bigram::from_bytes(&Bigram::build(&[("убава", "книга", 500)]).unwrap()).unwrap(),
+        );
+        let got = with_bi.check("убава книгаи");
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].suggestions.first().map(String::as_str), Some("книга"), "{:?}", got[0].suggestions);
+    }
+
+    #[test]
+    fn bigram_miss_falls_back_to_unigram_order() {
+        use crate::bigram::Bigram;
+        use crate::frequency::Frequency;
+        let base = Checker::new(Lexicon::build_from_unsorted(["книга", "книги", "книгата", "убава"]).unwrap())
+            .unwrap()
+            .with_frequency(
+                Frequency::from_bytes(&Frequency::build(&[("книги", 900), ("книга", 1)]).unwrap())
+                    .unwrap(),
+            )
+            .with_bigram(
+                Bigram::from_bytes(&Bigram::build(&[("некојдруг", "книга", 5)]).unwrap()).unwrap(),
+            );
+        let got = base.check("убава книгаи");
+        assert_eq!(got[0].suggestions.first().map(String::as_str), Some("книги"));
+    }
+
+    #[test]
+    fn bigram_next_context_applies_at_text_start() {
+        use crate::bigram::Bigram;
+        use crate::frequency::Frequency;
+        // Typo is the first word (no prev); the bigram after it must still win.
+        let c = Checker::new(Lexicon::build_from_unsorted(["книга", "книги", "книгата", "убава"]).unwrap())
+            .unwrap()
+            .with_frequency(
+                Frequency::from_bytes(&Frequency::build(&[("книги", 900), ("книга", 1)]).unwrap())
+                    .unwrap(),
+            )
+            .with_bigram(
+                Bigram::from_bytes(&Bigram::build(&[("книга", "убава", 500)]).unwrap()).unwrap(),
+            );
+        let got = c.check("книгаи убава");
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].suggestions.first().map(String::as_str), Some("книга"), "{:?}", got[0].suggestions);
+    }
+
+    #[test]
+    fn suggest_next_completes_from_bigram_counts() {
+        use crate::bigram::Bigram;
+        let c = checker().with_bigram(
+            Bigram::from_bytes(&Bigram::build(&[("тој", "оди", 900), ("тој", "одидома", 1)]).unwrap())
+                .unwrap(),
+        );
+        let got = c.suggest_next("тој", "оди", 5);
+        assert_eq!(got.first().map(String::as_str), Some("оди"), "{got:?}");
+        assert!(c.suggest_next("непостоечка", "оди", 5).is_empty());
+        assert!(checker().suggest_next("тој", "оди", 5).is_empty());
     }
 
     #[test]
