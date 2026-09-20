@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="mk">
+<head>
+<meta charset="utf-8">
+<title>Поставки — Македонски коректор</title>
+<link rel="stylesheet" href="options.css">
+</head>
+<body>
+<main>
+  <header class="mk-card mk-head-card">
+    <div class="mk-logo" aria-hidden="true">Мк</div>
+    <div>
+      <h1>Македонски коректор</h1>
+      <p>Поставки — сè е локално, ништо не ја напушта машината.</p>
+    </div>
+  </header>
+
+  <section class="mk-card">
+    <h2>Општо</h2>
+    <label class="mk-row">
+      <span><strong>Проверката е вклучена</strong><small>Главен прекинувач за сè.</small></span>
+      <input type="checkbox" class="mk-switch" id="enabled">
+    </label>
+    <label class="mk-row">
+      <span><strong>Доцнење (ms)</strong><small>Колку да почека по последното чукање пред проверка.</small></span>
+      <input type="number" id="delayMs" min="0" max="5000" step="50">
+    </label>
+    <div class="mk-row">
+      <span><strong>Исклучени сајтови</strong><small>Тука проверката молчи. Вклучи ги повторно од popup-от на сајтот.</small></span>
+    </div>
+    <ul id="siteOff" class="mk-list"></ul>
+  </section>
+
+  <section class="mk-card">
+    <h2>Личен речник</h2>
+    <p class="mk-hint">Секој збор во нов ред. Овие зборови никогаш не се пријавуваат.</p>
+    <textarea id="userWords" rows="6" spellcheck="false"></textarea>
+  </section>
+
+  <section class="mk-card">
+    <div class="mk-rules-head">
+      <h2>Правила</h2>
+      <input type="search" id="search" placeholder="Пребарај правило…">
+    </div>
+    <div class="mk-btn-row">
+      <button type="button" id="reset">Ресетирај</button>
+      <button type="button" id="toggleAll">Исклучи ги сите</button>
+    </div>
+    <div id="rules"></div>
+  </section>
+</main>
+<script src="settings.js"></script>
+<script src="options.js"></script>
+</body>
+</html>

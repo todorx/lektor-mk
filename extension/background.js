@@ -37,8 +37,8 @@ browser.runtime.onMessage.addListener((msg) => {
   // ponytail: global 20k-char cap per check; fields beyond this are truncated
   // rather than freezing the page on paste dumps.
   const text = msg.text.slice(0, 20000);
-  return getChecker().then(
-    (c) => ({ ok: true, json: c.check(text) }),
+  return Promise.all([getChecker(), loadSettings()]).then(
+    ([c, settings]) => ({ ok: true, json: JSON.stringify(applySettings(JSON.parse(c.check(text)), settings)) }),
     (e) => ({ ok: false, error: String(e) })
   );
 });

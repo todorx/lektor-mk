@@ -1,0 +1,93 @@
+/* Shared modern UI for popup and options pages (extension context only). */
+:root { color-scheme: light dark; }
+body {
+  font: 14px system-ui, -apple-system, "Segoe UI", sans-serif;
+  margin: 0; color: #1a1a1a; background: #f4f4f5;
+}
+body.mk-popup { width: 360px; padding: 10px; }
+main { max-width: 640px; margin: 0 auto; padding: 16px 12px 32px; }
+h1 { font-size: 16px; margin: 0; }
+h2 { font-size: 12px; margin: 0 0 4px; text-transform: uppercase; letter-spacing: 0.06em; color: #666; }
+h3 { font-size: 13px; margin: 12px 0 0; color: #444; }
+p { margin: 2px 0 0; font-size: 12px; color: #666; }
+
+.mk-card {
+  background: #fff; border: 1px solid #e4e4e7; border-radius: 12px;
+  padding: 12px 14px; margin-bottom: 10px; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+.mk-head-card { display: flex; gap: 10px; align-items: center; }
+.mk-logo {
+  width: 36px; height: 36px; border-radius: 10px; flex: none;
+  display: flex; align-items: center; justify-content: center;
+  background: #b91c1c; color: #fff; font-weight: 700; font-size: 15px;
+}
+.mk-dot { width: 12px; height: 12px; border-radius: 50%; background: #16a34a; flex: none; }
+.mk-dot.off { background: #a1a1aa; }
+
+.mk-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 8px 0; border-top: 1px solid #f0f0f2; cursor: pointer;
+}
+.mk-row:first-of-type { border-top: 0; }
+.mk-row > span { display: flex; flex-direction: column; }
+.mk-row strong { font-size: 14px; font-weight: 600; }
+.mk-row small { font-size: 12px; color: #666; }
+
+/* Toggle switch built on a plain checkbox (no framework). */
+.mk-switch {
+  appearance: none; -webkit-appearance: none; flex: none; cursor: pointer;
+  width: 38px; height: 22px; border-radius: 999px; background: #d4d4d8;
+  position: relative; margin: 0; transition: background 0.15s;
+}
+.mk-switch:checked { background: #16a34a; }
+.mk-switch::after {
+  content: ""; position: absolute; top: 2px; left: 2px;
+  width: 18px; height: 18px; border-radius: 50%; background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3); transition: left 0.15s;
+}
+.mk-switch:checked::after { left: 18px; }
+
+textarea, input[type="number"], input[type="search"] {
+  font: inherit; border: 1px solid #d4d4d8; border-radius: 8px; padding: 6px 8px;
+  background: #fff; color: inherit; box-sizing: border-box;
+}
+body.mk-popup textarea { width: 100%; height: 90px; }
+main textarea { width: 100%; resize: vertical; }
+input[type="search"] { width: 200px; }
+
+button {
+  font: inherit; font-size: 13px; border: 1px solid #d4d4d8; border-radius: 8px;
+  background: #fff; padding: 5px 12px; cursor: pointer;
+}
+button:hover { background: #f4f4f5; }
+button.mk-primary { background: #b91c1c; border-color: #b91c1c; color: #fff; }
+button.mk-primary:hover { background: #991b1b; }
+button.mk-link { border: 0; background: none; color: #b91c1c; padding: 0; }
+.mk-btn-row { display: flex; gap: 8px; margin: 8px 0; }
+
+.mk-item { border-top: 1px solid #eee; padding: 6px 0; }
+.mk-item b { text-decoration: underline wavy #dc2626; }
+.mk-item i { display: inline-block; font-style: normal; font-size: 11px; color: #fff;
+  background: #71717a; border-radius: 4px; padding: 0 5px; margin-left: 6px; }
+.mk-item span { display: block; color: #555; font-size: 12px; }
+.mk-item button { margin: 4px 4px 0 0; font-size: 12px; }
+
+.mk-list { list-style: none; margin: 4px 0 0; padding: 0; }
+.mk-list-row { display: flex; justify-content: space-between; align-items: center; padding: 4px 0; }
+.mk-empty { color: #888; font-size: 13px; }
+.mk-hint { font-size: 12px; color: #666; margin: 0 0 6px; }
+.mk-rules-head { display: flex; justify-content: space-between; align-items: center; }
+footer { display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: #777; padding: 2px 4px; }
+
+@media (prefers-color-scheme: dark) {
+  body { color: #e4e4e7; background: #18181b; }
+  h2, p, .mk-row small, .mk-hint, footer, .mk-empty { color: #a1a1aa; }
+  h3 { color: #d4d4d8; }
+  .mk-card { background: #27272a; border-color: #3f3f46; }
+  .mk-row { border-color: #3f3f46; }
+  textarea, input[type="number"], input[type="search"] { background: #18181b; border-color: #52525b; }
+  button { background: #27272a; border-color: #52525b; color: #e4e4e7; }
+  button:hover { background: #3f3f46; }
+  .mk-item { border-color: #3f3f46; }
+  .mk-item span { color: #a1a1aa; }
+}

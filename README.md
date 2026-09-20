@@ -65,8 +65,10 @@ python tools/build_extension.py   # wasm + glue + data/mk.fst + data/mk.morph
 Then load it in Firefox via `about:debugging` → This Firefox →
 Load Temporary Add-on → `extension/manifest.json`. The checker runs
 entirely on-device: text fields get Harper-style inline wavy underlines
-as you type (click one for fixes), and the toolbar popup checks
-pasted text.
+as you type (click one for fixes, or ignore the word everywhere), and the
+toolbar popup checks pasted text. The options page (Harper-style: master
+toggle, per-rule toggles with search, personal dictionary, delay, blocked
+sites) lives behind the popup's Поставки button; settings apply live.
 
 ## Build
 

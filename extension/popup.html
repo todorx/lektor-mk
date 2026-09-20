@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="mk">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="pages.css">
+</head>
+<body class="mk-popup">
+<header class="mk-card mk-head-card">
+  <span id="dot" class="mk-dot" aria-hidden="true"></span>
+  <div>
+    <h1>Македонски коректор</h1>
+    <p id="status">Проверка…</p>
+  </div>
+</header>
+
+<section class="mk-card">
+  <label class="mk-row">
+    <span><strong>Проверка</strong></span>
+    <input type="checkbox" class="mk-switch" id="enabled">
+  </label>
+  <label class="mk-row" id="siteRow">
+    <span><strong>На овој сајт</strong><small id="host"></small></span>
+    <input type="checkbox" class="mk-switch" id="siteOn">
+  </label>
+</section>
+
+<section class="mk-card">
+  <h2>Брза проверка</h2>
+  <textarea id="in" placeholder="Внесете текст за проверка…"></textarea>
+  <div class="mk-btn-row">
+    <button id="go" type="button" class="mk-primary">Провери</button>
+  </div>
+  <div id="out"></div>
+</section>
+
+<footer>
+  <button id="options" type="button" class="mk-link">Поставки</button>
+  <span>Целосно локално — текстот не ја напушта машината.</span>
+</footer>
+<script src="settings.js"></script>
+<script src="popup.js"></script>
+</body>
+</html>

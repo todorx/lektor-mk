@@ -1,0 +1,75 @@
+#__mk_mirror {
+  position: fixed;
+  z-index: 2147483646;
+  margin: 0;
+  border: 0;
+  box-sizing: border-box;
+  overflow: hidden;
+  background: transparent;
+  color: transparent;
+  pointer-events: none;
+  overflow-wrap: break-word;
+}
+#__mk_mirror .mk-u {
+  pointer-events: auto;
+  cursor: pointer;
+  text-decoration-line: underline;
+  text-decoration-style: wavy;
+  text-decoration-thickness: 1px;
+}
+#__mk_mirror .mk-error {
+  text-decoration-color: #e00;
+}
+#__mk_mirror .mk-warning {
+  text-decoration-color: #e80;
+}
+#__mk_mirror .mk-info {
+  text-decoration-color: #06c;
+}
+#__mk_card {
+  position: fixed;
+  width: min(300px, 90vw);
+  z-index: 2147483647;
+  font: 14px system-ui, sans-serif;
+  background: #fff;
+  color: #111;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  padding: 10px 12px;
+}
+#__mk_card .mk-head {
+  display: flex;
+  justify-content: space-between;
+  font-weight: bold;
+  margin-bottom: 4px;
+}
+#__mk_card span {
+  display: block;
+  color: #555;
+  font-size: 12px;
+}
+#__mk_card .mk-rule {
+  font-size: 11px;
+  color: #fff;
+  background: #71717a;
+  border-radius: 4px;
+  padding: 0 5px;
+  margin-bottom: 4px;
+  align-self: flex-start;
+}
+#__mk_card button[data-s] {
+  margin: 4px 4px 0 0;
+  font-size: 12px;
+  cursor: pointer;
+}
+#__mk_card .mk-ignore {
+  margin-top: 8px;
+  font-size: 12px;
+  cursor: pointer;
+  border: 0;
+  background: none;
+  color: #71717a;
+  padding: 0;
+  text-decoration: underline;
+}
