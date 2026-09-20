@@ -1,6 +1,6 @@
 {
   "manifest_version": 2,
-  "name": "Macedonian Proofreader",
+  "name": "Лектор-МК",
   "version": "0.1.0",
   "description": "Local-only Macedonian spelling and grammar checker. No text ever leaves your machine.",
   "browser_specific_settings": {

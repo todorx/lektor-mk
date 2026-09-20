@@ -6,7 +6,7 @@ members = ["crates/mk-core", "crates/mk-cli", "crates/mk-wasm"]
 version = "0.1.0"
 edition = "2021"
 license = "GPL-3.0-or-later"
-repository = "https://github.com/todorx/macedonian-text"
+repository = "https://github.com/todorx/lektor-mk"
 
 [workspace.dependencies]
 fst = "0.4"

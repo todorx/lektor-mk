@@ -20,4 +20,11 @@ node_modules/
 /extension/mk.bigram
 /tools/bin/
 
+# Agent scratch, OS junk, bytecode, packaging output
+/.superpowers/
+desktop.ini
+Thumbs.db
+__pycache__/
+/web-ext-artifacts/
+
 .worktrees/
