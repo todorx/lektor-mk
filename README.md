@@ -77,7 +77,7 @@ Macedonian attaches the definite article as a suffix, in three deictic series: `
 
 ## Install
 
-**Firefox** (extension is Manifest V2, Firefox-only for now):
+**Firefox** (Manifest V3, desktop 140+ and Android 142+):
 
 ```bash
 python tools/build_extension.py   # wasm + glue + data/mk.fst + data/mk.morph

@@ -1,3 +1,3 @@
 Lektor-MK — Macedonian spelling and grammar checking, fully on-device in your browser. No text ever leaves your machine: no server, no internet, works offline.
-Underlines mistakes as you type in any text field (click an underline for fixes); the toolbar popup checks pasted text and suggests next-word completions.
+Underlines mistakes as you type in any text field (click an underline for fixes); the toolbar popup checks pasted text and suggests next-word completions. Works on Firefox for Android 142+ as well as desktop.
 Covers spelling (427,000+ forms), Latin-inside-Cyrillic homoglyphs, foreign Cyrillic letters, double definiteness, clitic order, dative ѝ, l-participle agreement, fused не/нај/по, and punctuation. Every rule ships precision-gated with positive and negative tests.
