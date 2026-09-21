@@ -46,7 +46,7 @@ def check_tree_clean():
 
 def patch_version(path, version, pattern):
     text = path.read_text(encoding="utf-8")
-    new, n = pattern.subn(lambda m: m.group(1) + version, text, count=1)
+    new, n = pattern.subn(lambda m: m.group(1) + version + '"', text, count=1)
     if n != 1:
         fail(f"version pattern not found once in {path}")
     if new == text:
