@@ -1,12 +1,15 @@
 {
-  "manifest_version": 2,
+  "manifest_version": 3,
   "name": "Лектор-МК",
   "version": "0.1.0",
   "description": "Local-only Macedonian spelling and grammar checker. No text ever leaves your machine.",
   "browser_specific_settings": {
     "gecko": {
       "id": "mk-proofreader@macedonian-text",
-      "strict_min_version": "109.0"
+      "data_collection_permissions": {
+        "required": ["none"]
+      },
+      "strict_min_version": "140.0"
     }
   },
   "permissions": ["activeTab", "storage", "clipboardWrite"],
@@ -17,10 +20,14 @@
     "page": "options.html",
     "open_in_tab": true
   },
-  "browser_action": {
+  "action": {
     "default_title": "Check Macedonian text",
     "default_popup": "popup.html",
-    "default_icon": "icons/icon.svg"
+    "default_icon": {
+      "48": "icons/icon-48.png",
+      "96": "icons/icon-96.png",
+      "128": "icons/icon-128.png"
+    }
   },
   "content_scripts": [
     {
@@ -30,5 +37,15 @@
       "run_at": "document_idle"
     }
   ],
-  "web_accessible_resources": ["mk_pkg/mk_wasm_bg.wasm", "mk.fst", "mk.morph", "mk.freq", "mk.bigram"]
+  "icons": {
+    "48": "icons/icon-48.png",
+    "96": "icons/icon-96.png",
+    "128": "icons/icon-128.png"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["mk_pkg/mk_wasm_bg.wasm", "mk.fst", "mk.morph", "mk.freq", "mk.bigram"],
+      "matches": ["*://*/*"]
+    }
+  ]
 }
