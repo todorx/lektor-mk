@@ -21,6 +21,18 @@
   let cardDiag = null;
   let delayMs = 700;
   let active = true;
+  let retries = 0;
+  // Cold event page (WASM + lexicon reload) can reject the first message.
+  const MAX_RETRIES = 6;
+  // Android keyboards overlay the page instead of resizing it, so a field low
+  // on screen keeps both its text and our underlines behind the keyboard.
+  // ponytail: fixed 40% line; Android exposes no keyboard-height API to JS.
+  const KEYBOARD_SAFE_RATIO = 0.4;
+  const scrollDelta = (rectBottom, viewportHeight) => {
+    const safe = viewportHeight * KEYBOARD_SAFE_RATIO;
+    return rectBottom > safe ? rectBottom - safe : 0;
+  };
+  const retryDelay = (attempt) => (attempt < MAX_RETRIES ? 300 * (attempt + 1) : 0);
 
   const esc = (s) =>
     s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -135,12 +147,15 @@
     checking = true;
     try {
       const res = await browser.runtime.sendMessage({ type: "mk-check", text: getText(el) });
+      retries = 0;
       if (el === field) {
         diags = res && res.ok ? JSON.parse(res.json) : [];
         render();
       }
     } catch (e) {
-      /* background unreachable; next keystroke retries */
+      // Retry so a cold background recovers without requiring another keystroke.
+      const wait = el === field && active ? retryDelay(retries++) : 0;
+      if (wait) setTimeout(() => { if (el === field && active) check(el); }, wait);
     }
     checking = false;
     if (dirty && el === field) {
@@ -315,6 +330,13 @@
       field = e.target;
       singleLine = field.tagName === "INPUT";
       diags = [];
+      retries = 0;
+      // Android: lift the field clear of the overlaid keyboard before checking,
+      // otherwise the text and its underlines sit behind it.
+      if (/Android/i.test(navigator.userAgent || "")) {
+        const d = scrollDelta(field.getBoundingClientRect().bottom, innerHeight);
+        if (d) window.scrollBy(0, d);
+      }
       check(field);
     },
     true
@@ -331,4 +353,10 @@
   document.addEventListener("click", (e) => {
     if (!e.target.closest?.("#" + CARD_ID) && !e.target.closest?.("[data-i]")) closeCard();
   });
+
+  // Export the pure decisions for node; in the browser this script is a plain
+  // content script with no module system.
+  if (typeof module !== "undefined" && module.exports) {
+    module.exports = { scrollDelta, retryDelay, MAX_RETRIES };
+  }
 })();
