@@ -27,7 +27,7 @@ One new script `tools/build_release.py` (~150 lines, stdlib only). Reuses `tools
 - Existing tools assumed present: `cargo`, node 24, `npx web-ext` (10.7.0 verified), `npx addons-linter` (10.13.0 verified), wasm-bindgen prebuilt-binary path already handled by `build_extension.py` (no `cargo install` into locked `%TEMP%`).
 - Version single-sourced from `--version` flag; script patches `extension/manifest.json` and `Cargo.toml`, aborts on dirty tree (except `dist/`).
 - Outputs (gitignored) under `dist/`: `lektor-mk-<ver>.zip`, `lektor-mk-<ver>-source.zip`, `lint.json`, `listing-check.txt`.
-- Manifest stays MV2 (`mk-proofreader@macedonian-text`); Firefox accepts MV2. No permission changes.
+- Manifest is MV3 after Phase 1 (no permission changes).
 
 ## 3. Components
 
