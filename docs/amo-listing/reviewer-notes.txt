@@ -1,0 +1,5 @@
+Reviewer notes for Лектор-МК (Firefox, MV3, local-only).
+BUILD REPRO: python tools/build_extension.py runs: cargo build -p mk-wasm --target wasm32-unknown-unknown --release, then wasm-bindgen --target no-modules (CLI version pinned to Cargo.lock; prebuilt binary fetched to tools/bin, no cargo install) into extension/mk_pkg/, then copies data/mk.{fst,morph,freq,bigram} next to the extension.
+WASM GLUE: extension/mk_pkg/mk_wasm.js is unmodified wasm-bindgen output (plus .d.ts), not hand-minified.
+DATA PROVENANCE (counts/lists only, no article text ships): base wordlist gerazov/dictionary-mk (GPL-2.0, hence project GPL-3.0-or-later); morphology expanded from apertium-mkd paradigms (GPL) via tools/expand_apertium.py; unigram/bigram counts (top 40k/50k) from the MK Wikipedia dump (CC BY-SA 4.0, counts only); proper-noun gazetteer from Wikipedia titles, reviewed before commit. Rebuild steps: README "Build from source".
+PERMISSIONS: activeTab (per-site toggle + popup host detection), storage (settings/user dict), clipboardWrite (copy suggestion on click). No remote code, no network calls.

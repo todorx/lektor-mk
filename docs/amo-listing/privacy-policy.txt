@@ -1,0 +1,6 @@
+Privacy policy for Лектор-МК.
+1. No data collection: the extension collects, stores, transmits, and shares nothing about you or your text.
+2. No network: all checking runs locally (WebAssembly + local lexicon files); the extension makes zero network requests and includes no analytics.
+3. Local storage only: the `storage` permission keeps your settings, rule toggles, personal dictionary, and per-site preferences on your device.
+4. `activeTab` is used to detect the current site for per-site toggles and paste-box checking; `clipboardWrite` copies a chosen suggestion on click.
+Contact: via the add-on listing support address.
