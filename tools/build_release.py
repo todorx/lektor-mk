@@ -28,7 +28,10 @@ def valid_version(v):
 
 def run(*args):
     print("+", " ".join(str(a) for a in args))
-    subprocess.run(args, cwd=ROOT, check=True)
+    exe = args[0] if Path(str(args[0])).exists() else shutil.which(str(args[0]))
+    if not exe:
+        fail(f"{args[0]} not found on PATH")
+    subprocess.run((exe, *args[1:]), cwd=ROOT, check=True)
 
 
 def fail(msg):
