@@ -109,6 +109,19 @@ def lint_zip(zipp):
         fail("linter errors — fix and re-run")
 
 
+def overlay_versions(bundle, files):
+    """Replace {arcname: text} entries inside a zip (rebuild; zip allows dupes)."""
+    tmp = bundle.with_suffix(".tmp.zip")
+    with zipfile.ZipFile(bundle) as zin, \
+            zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as zout:
+        for item in zin.infolist():
+            if item.filename in files:
+                zout.writestr(item.filename, files[item.filename])
+            else:
+                zout.writestr(item.filename, zin.read(item.filename))
+    tmp.replace(bundle)
+
+
 def source_bundle(version):
     out = DIST / f"lektor-mk-{version}-source.zip"
     with tempfile.TemporaryDirectory() as tmp:
@@ -116,6 +129,10 @@ def source_bundle(version):
         subprocess.run(["git", "archive", "HEAD", "-o", str(arc)],
                        cwd=ROOT, check=True)
         shutil.copy(arc, out)
+    overlay_versions(out, {
+        "extension/manifest.json": (EXT / "manifest.json").read_text(encoding="utf-8"),
+        "Cargo.toml": (ROOT / "Cargo.toml").read_text(encoding="utf-8"),
+    })
     print("wrote", out)
     return out
 
