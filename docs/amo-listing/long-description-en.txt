@@ -1,0 +1,48 @@
+**Macedonian spelling and grammar checking, entirely on your device.** No text ever leaves your machine — no server, no internet, no analytics. It works offline, inside your browser.
+
+Macedonian is not supported by LanguageTool, Grammarly, or any other serious proofreading tool. Lektor-MK is an attempt at the first real one: spelling and grammar that run completely on your own computer.
+
+## What it checks
+
+13 rules, each with positive and negative tests:
+
+- **Spelling** — 427,464 forms in a compact FST (1.25 MB), with suggestions ranked by frequency.
+- **Mixed scripts** — Latin letters hidden inside Cyrillic words (`мaкeдoнски`), invisible to the eye.
+- **Foreign Cyrillic letters** — Serbian `ђ ћ`, Russian `ъ ы э я ю`, Bulgarian `щ`.
+- **Latin-transliterated Macedonian** — converted back to Cyrillic.
+- **Double definiteness** — `убавата книгата` → `убавата книга`.
+- **Clitic order** — `ми го даде` ✓, `го ми даде` ✗.
+- **Dative ѝ** — `ѝ` as opposed to the conjunction `и`.
+- **L-participle agreement** — `таа дошол` ✗, does not agree with its subject.
+- **Fused не** — `несака` → `не сака`.
+- **Separated нај and по** — `нај добар` → `најдобар`, `по добар` → `подобар`.
+- **Punctuation** — lowercase sentence start, space before a closing comma or period.
+
+## How you use it
+
+As you type in any text field, flagged words get a wavy underline. Click an underline to get a card with the rule name, a short explanation, and a suggested fix you can apply with one click. If the word is correct, add it to your personal dictionary.
+
+The toolbar popup offers a quick check of pasted text and next-word autocomplete (from a bigram table). Settings give you a master switch, a check delay, a personal dictionary, per-site pausing, and a toggle for every individual rule.
+
+## Privacy
+
+- Nothing is collected, stored, transmitted, or shared.
+- Zero network requests. No analytics, no telemetry, no accounts.
+- `storage` — only your settings and personal dictionary, kept on your device.
+- `activeTab` — to recognise the current site for per-site pausing.
+- `clipboardWrite` — to copy a suggestion when you click it.
+
+## Accuracy
+
+Every rule is precision-gated: it does not ship unless it reports zero false positives on a Macedonian Wikipedia sample. The flag rate is 2.78% over 17,104 words, and `MK_DOUBLE_DEFINITE` has 0 false positives across 17,782 words of edited prose. Rules change; the bar does not: precision before recall.
+
+## Compatibility
+
+- Firefox 140+ on desktop, and Firefox for Android 142+.
+- About 2.2 MB to download, about 6.2 MB installed.
+
+## License and source
+
+GPL-3.0-or-later. Everything is open: the base wordlist (gerazov/dictionary-mk, GPL-2.0), the paradigms expanded from Apertium (GPL), and counts only from Macedonian Wikipedia (CC BY-SA 4.0) — Wikipedia article text is never distributed.
+
+The engine is Rust compiled to WebAssembly, with no I/O and no platform assumptions. The same code backs the test CLI and a future desktop build.
