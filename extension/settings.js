@@ -78,5 +78,5 @@ function siteEnabled(settings, hostname) {
 
 // Export for node tests; in the browser the consts are globals.
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { MK_RULES, MK_GROUPS, mkDefaults, normalizeSettings, applySettings, siteEnabled };
+  module.exports = { MK_RULES, MK_GROUPS, mkDefaults, normalizeSettings, applySettings, siteEnabled, loadSettings, saveSettings };
 }

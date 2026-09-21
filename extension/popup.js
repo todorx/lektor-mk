@@ -7,6 +7,17 @@ const esc = (s) =>
 
 let settings = mkDefaults();
 let host = "";
+let lastDiags = [];
+
+// Scalar-safe splice: replace [start, end) code points with rep, clamped.
+// Same unit as content.js's splice; offsets come from the engine in scalars.
+function applySuggestionText(text, start, end, rep) {
+  const c = Array.from(String(text));
+  const n = c.length;
+  const a = Math.max(0, Math.min(start | 0, n));
+  const b = Math.max(a, Math.min(end | 0, n));
+  return c.slice(0, a).join("") + String(rep) + c.slice(b).join("");
+}
 
 async function currentHost() {
   try {
@@ -102,30 +113,52 @@ async function suggestNow() {
   }
 }
 
-$("go").addEventListener("click", async () => {
+$("go").addEventListener("click", runCheck);
+
+async function runCheck() {
   const out = $("out");
   out.textContent = "Проверува…";
   try {
     const res = await browser.runtime.sendMessage({ type: "mk-check", text: $("in").value });
     const diags = res && res.ok ? JSON.parse(res.json) : [];
+    lastDiags = diags;
     out.innerHTML = diags.length
       ? diags
           .map(
-            (d) =>
+            (d, di) =>
               `<div class="mk-item"><b>${esc(d.text)}</b><i>${esc(ruleName(d.rule))}</i>` +
               `<span>${esc(d.message)}</span>` +
-              (d.suggestions || []).slice(0, 3).map((s) => `<button type="button">${esc(s)}</button>`).join("") +
+              (d.suggestions || []).slice(0, 3).map((s, si) => `<button type="button" data-di="${di}" data-si="${si}">${esc(s)}</button>`).join("") +
               `</div>`
           )
           .join("")
       : "Нема грешки.";
     out.querySelectorAll("button").forEach((b) =>
-      b.addEventListener("click", () => navigator.clipboard && navigator.clipboard.writeText(b.textContent))
+      b.addEventListener("click", () => applySuggestion(+b.dataset.di, +b.dataset.si))
     );
   } catch (e) {
     out.textContent = "Грешка при проверката.";
   }
-});
+}
+
+// Apply one suggestion to the textarea at its diagnostic offsets, then
+// re-check so remaining underlines track the new text. Falls back to the
+// old clipboard copy when the text moved under us (stale offsets).
+function applySuggestion(di, si) {
+  const d = lastDiags[di];
+  const s = d && (d.suggestions || [])[si];
+  if (!d || s == null) return;
+  const el = $("in");
+  const fixed = applySuggestionText(el.value, d.char_start, d.char_end, s);
+  const span = Array.from(el.value).slice(d.char_start, d.char_end).join("");
+  if (span !== d.text) {
+    if (navigator.clipboard) navigator.clipboard.writeText(s);
+    return;
+  }
+  el.value = fixed;
+  el.focus();
+  runCheck();
+}
 
 (async () => {
   settings = await loadSettings();
@@ -133,3 +166,8 @@ $("go").addEventListener("click", async () => {
   if (host) $("host").textContent = host;
   renderStatus();
 })();
+
+// Export for node tests; in the browser the consts are globals.
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = { applySuggestionText };
+}
