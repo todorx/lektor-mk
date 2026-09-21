@@ -18,7 +18,7 @@ Goal: migrate to MV3 first, then one command produces an AMO-listed-ready submis
 - Mandatory manifest edits: `manifest_version` 2 → 3; `browser_action` → `action` (same popup/icon/title); `web_accessible_resources` string array → object array (`{resources, matches: ["*://*/*"]}`, behavior unchanged).
 - Event-page consequence (accepted): `persistent:true` is an error in MV3, so the background unloads when idle and `checkerPromise` in-memory state is dropped; next message re-runs `getChecker()` (WASM + data reload) with zero code changes since loading is already lazy. No persistence work.
 - Add manifest `icons` key (48/96/128 PNGs derived from `icon.svg`).
-- `permissions` (`activeTab, storage, clipboardWrite`), `options_ui`, `content_scripts`, `browser_specific_settings.gecko` (strict_min_version 109.0 = first MV3 Firefox) all unchanged.
+- `permissions` (`activeTab, storage, clipboardWrite`), `options_ui`, `content_scripts` all unchanged. `browser_specific_settings.gecko`: kept `id`, added `data_collection_permissions.required: ["none"]` (mandatory for new AMO submissions since Nov 2025), `strict_min_version` 109.0 → 140.0 (linter: DCP key needs FF140+).
 - Verify: `addons-linter` 0 errors on MV3 manifest + `about:debugging` temporary load + inline check on one page.
 
 ### Phase 2 — publish kit
