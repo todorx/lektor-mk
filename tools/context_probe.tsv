@@ -1,0 +1,30 @@
+# Real-word / agreement gate. Tab-separated:
+#   correct <TAB> perturbed <TAB> wrong_token <TAB> family
+#
+# The left column is also the precision set: every line is correct Macedonian
+# and nothing should be flagged on it. The middle column injects exactly one
+# error, and `wrong_token` is the word that must be pointed at.
+#
+# family=agree  the error is agreement; a hit means some rule flagged
+#               `wrong_token`. Target rows for the agreement rules.
+# family=-      known to be uncovered (tense and mood, not agreement). Listed
+#               so the gap is visible rather than implied.
+#
+# These are seed rows, not a coverage claim. Keep every row honest: if the left
+# column is not actually correct, the precision number is meaningless.
+Тој ја виде книгата.	Тој ја види книгата.	види	-
+Таа го виде филмот.	Таа го види филмот.	види	-
+Тој дојде дома.	Тој дојди дома.	дојди	-
+Тој работи дома.	Тој работат дома.	работат	agree
+Тој сака кафе.	Тој сакаа кафе.	сакаа	agree
+Тој знае одговорот.	Тој знаат одговорот.	знаат	agree
+Тој има куче.	Тој имаат куче.	имаат	agree
+Таа е убава жена.	Таа е убаво жена.	убаво	agree
+Тој е голем човек.	Тој е голема човек.	голема	agree
+Ова е нова книга.	Ова е ново книга.	ново	agree
+Ти си добар човек.	Ти си добра човек.	добра	agree
+Тој го чита весникот.	Тој го читаат весникот.	читаат	agree
+Таа пее песна.	Таа пееја песна.	пееја	agree
+Ние одиме дома.	Ние одиш дома.	одиш	agree
+Тој гледа телевизија.	Тој гледаат телевизија.	гледаат	agree
+Тие пишуваат писмо.	Тие пишува писмо.	пишува	agree

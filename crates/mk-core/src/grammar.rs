@@ -42,6 +42,8 @@ pub fn check(
     sentence_capital(tokens, lexicon, &mut out);
     po_separated(tokens, lexicon, morph, &mut out);
     space_before_punct(tokens, &mut out);
+    adjective_agreement(tokens, morph, &mut out);
+    verb_agreement(tokens, morph, &mut out);
     out
 }
 
@@ -522,6 +524,199 @@ fn capitalize_first(s: &str) -> String {
 /// auxiliary between is future work. Fires only when no reading pair agrees
 /// in gender and number; the suggestion reuses a stored form of the same
 /// lemma, and is omitted when none matches.
+/// An attributive adjective must agree with its noun in gender and number.
+///
+/// ```text
+/// убава книга    ✓   убаво книга    ✗
+/// голем човек    ✓   голема човек   ✗
+/// ```
+///
+/// Both words must be unambiguous: if any reading of the adjective or the noun
+/// lacks a gender or number, the phrase cannot be read and the rule stays
+/// silent. A single agreeing reading is enough to save the pair, so homographs
+/// that happen to mismatch are never reported.
+fn adjective_agreement(tokens: &[Token<'_>], morph: &Morphology, out: &mut Vec<Diagnostic>) {
+    for i in 0..tokens.len().saturating_sub(1) {
+        let (first, second) = (&tokens[i], &tokens[i + 1]);
+        if first.kind != TokenKind::Word || second.kind != TokenKind::Word {
+            continue;
+        }
+        let (adj_readings, noun_readings) = (morph.analyze(first.text), morph.analyze(second.text));
+        // A word that is also a noun or a verb takes its other reading here
+        // (`цел освојување`, `прави разлика`), so only an unambiguous
+        // adjective can be judged against a noun.
+        if !adj_readings.iter().all(|a| a.pos() == Some(Pos::Adjective)) {
+            continue;
+        }
+        let (Some(adj), Some(noun)) = (
+            agree_forms(&adj_readings, Pos::Adjective),
+            agree_forms(&noun_readings, Pos::Noun),
+        ) else {
+            continue;
+        };
+        // A noun directly followed by another noun is a modifier, not the head
+        // of the phrase: in `достапни интернет услуги` the adjective agrees
+        // with `услуги`.
+        if let Some(after) = tokens.get(i + 2) {
+            if after.kind == TokenKind::Word
+                && morph.analyze(after.text).iter().any(|a| a.pos() == Some(Pos::Noun))
+            {
+                continue;
+            }
+        }
+        // A capitalised adjective mid-sentence is part of a name
+        // (`Александар Велики`), and a sentence-initial one cannot be told from
+        // an adverb without a real sentence segmenter (`Географски, земјата…`).
+        // Both would be guesses, so neither is judged.
+        if first.text.chars().next().is_some_and(char::is_uppercase) {
+            continue;
+        }
+        let agrees = adj
+            .iter()
+            .any(|(ag, an)| noun.iter().any(|(ng, nn)| compatible(*ag, *ng) && an == nn));
+        if agrees {
+            continue;
+        }
+        out.push(Diagnostic {
+            rule: rule::ADJ_AGREEMENT.to_string(),
+            severity: Severity::Error,
+            char_start: first.char_start,
+            char_end: second.char_end,
+            text: format!("{} {}", first.text, second.text),
+            message: "Придавката мора да се сложува со именката во род и број.".to_string(),
+            // No reverse index lemma → adjective forms exists, and inventing
+            // the agreeing surface form would guess at a paradigm. The card
+            // still names the rule and explains the mismatch.
+            suggestions: Vec::new(),
+        });
+    }
+}
+
+/// Gender and number of every `pos` reading of a word.
+///
+/// `None` when there is no such reading, or when any one of them is missing a
+/// feature — an under-specified word is not evidence of disagreement.
+fn agree_forms(analyses: &[Analysis<'_>], pos: Pos) -> Option<Vec<(Gender, Number)>> {
+    let matching: Vec<&Analysis<'_>> = analyses.iter().filter(|a| a.pos() == Some(pos)).collect();
+    if matching.is_empty() {
+        return None;
+    }
+    let mut forms = Vec::with_capacity(matching.len());
+    for a in matching {
+        let (gender, number) = (a.gender()?, a.number()?);
+        // The count form follows a numeral (`два стола`); nothing attributive
+        // agrees with it, so it is not evidence either way.
+        if number == Number::Count {
+            return None;
+        }
+        forms.push((gender, number));
+    }
+    Some(forms)
+}
+
+/// A finite verb must agree with its subject in person and number.
+///
+/// ```text
+/// тој сака    ✓   тој сакаат    ✗
+/// ние одиме   ✓   ние одиш      ✗
+/// ```
+///
+/// The subject must be a nominative personal pronoun, and clitics and `не` are
+/// stepped over because they sit between subject and verb in ordinary prose
+/// (`тој ја виде`, `тој не дојде`). Neighbouring tokens were tried first, but a
+/// clitic phrase like `тој ја виде` is the common case, not the exception.
+fn verb_agreement(tokens: &[Token<'_>], morph: &Morphology, out: &mut Vec<Diagnostic>) {
+    for (i, subject) in tokens.iter().enumerate() {
+        if subject.kind != TokenKind::Word {
+            continue;
+        }
+        let Some((person, number)) = subject_person(morph, subject.text) else {
+            continue;
+        };
+
+        // At most two intervening clitics or a negation: `тој ми го даде`.
+        let mut j = i + 1;
+        let mut skipped = 0;
+        while j < tokens.len() && skipped < 2 && skippable(morph, &tokens[j]) {
+            j += 1;
+            skipped += 1;
+        }
+        let Some(verb) = tokens.get(j) else { continue };
+        if verb.kind != TokenKind::Word {
+            continue;
+        }
+
+        // Only readings that actually carry person and number can disagree.
+        // A form whose only reading is imperative or participle (`дојди`,
+        // `дошол`) says nothing about the subject, so it is left alone.
+        let readings = morph.analyze(verb.text);
+        let forms: Vec<(u8, Number)> = readings
+            .iter()
+            .filter(|a| a.pos() == Some(Pos::Verb))
+            .filter_map(|a| Some((person_of(a)?, a.number()?)))
+            .collect();
+        if forms.is_empty() || forms.contains(&(person, number)) {
+            continue;
+        }
+
+        out.push(Diagnostic {
+            rule: rule::VERB_AGREEMENT.to_string(),
+            severity: Severity::Error,
+            char_start: subject.char_start,
+            char_end: verb.char_end,
+            text: format!("{} {}", subject.text, verb.text),
+            message: "Глаголот мора да се сложува со подметот во лице и број.".to_string(),
+            suggestions: Vec::new(),
+        });
+    }
+}
+
+/// Person and number of a nominative personal pronoun, or `None`.
+///
+/// Clitics are excluded by the `nom` requirement, and a pronoun whose readings
+/// disagree about its own person or number is not a subject we can judge.
+fn subject_person(morph: &Morphology, form: &str) -> Option<(u8, Number)> {
+    let mut found: Option<(u8, Number)> = None;
+    for a in morph.analyze(form) {
+        if a.pos() != Some(Pos::Pronoun) || !a.has("nom") {
+            continue;
+        }
+        let (Some(person), Some(number)) = (person_of(&a), a.number()) else {
+            continue;
+        };
+        match found {
+            Some(previous) if previous != (person, number) => return None,
+            _ => found = Some((person, number)),
+        }
+    }
+    found
+}
+
+/// Apertium verbs and pronouns carry `p1`/`p2`/`p3`.
+fn person_of(a: &Analysis<'_>) -> Option<u8> {
+    ["p1", "p2", "p3"].iter().position(|t| a.has(t)).map(|i| i as u8 + 1)
+}
+
+/// A token that sits between a subject and its verb without changing who the
+/// subject is: a clitic pronoun (`ја`, `му`, `се`) or the negation.
+///
+/// Deliberately excludes `да` and `ќе`: `тој рече да одиме` is correct, and
+/// stepping over `да` would read `одиме` as agreeing with `тој`.
+fn skippable(morph: &Morphology, token: &Token<'_>) -> bool {
+    if token.kind != TokenKind::Word {
+        return false;
+    }
+    if token.text.eq_ignore_ascii_case("не") {
+        return true;
+    }
+    let readings = morph.analyze(token.text);
+    // `clt` marks the ordinary clitics (`ја`, `го`, `му`); the reflexives `се`
+    // and `си` are tagged `ref` instead, and both also carry an unrelated verb
+    // reading (`се` lists a spurious `vbser` plural), so "all readings are
+    // clitics" would never hold for them.
+    !readings.is_empty() && readings.iter().any(|a| a.has("clt") || a.has("ref"))
+}
+
 fn l_participle(tokens: &[Token<'_>], morph: &Morphology, out: &mut Vec<Diagnostic>) {
     for pair in tokens.windows(2) {
         let (subj, part) = (&pair[0], &pair[1]);
@@ -694,12 +889,23 @@ mod tests {
         add("пат", "пат", &["n", "m", "sg", "nom", "ind"]);
         add("стар", "стар", &["adj", "m", "sg", "nom", "ind"]);
         // precision-guard probes: definiteness + POS of по-frames
-        add("успешно", "успешен", &["adj", "nt", "sg", "nom", "ind"]);
-        add("успешно", "успешно", &["adv"]);
+        add("успешно", "успешен", &["adj", "nt", "sg", "nom", "ind"]);        add("успешно", "успешно", &["adv"]);
+        // agreement: a neuter adjective before a feminine noun, a plural verb
+        // after a singular subject, and two precision probes
+        add("убаво", "убав", &["adj", "nt", "sg", "nom", "ind"]);
+        add("сакаат", "сака", &["vblex", "impf", "tv", "pres", "p3", "pl"]);
+        add("секаков", "секаков", &["adj", "m"]);
+        add("они", "они", &["prn", "pers", "p3", "mfn", "pl", "nom"]);
+        add("они", "они", &["prn", "pers", "p2", "mfn", "pl", "nom"]);
         add("спроведениот", "спроведен", &["adj", "m", "sg", "nom", "def"]);
         add("катастрофалниот", "катастрофален", &["adj", "m", "sg", "nom", "def"]);
         add("уставно", "уставен", &["adj", "nt", "sg", "nom", "ind"]);
         add("железнички", "железнички", &["adj", "mfn", "pl", "nom", "ind"]);
+        // -ски adjectives are syncretic between masculine singular and plural
+        // (real Apertium lists both readings). Without the singular reading the
+        // fixture models the word wrongly and the agreement rule reads
+        // "железнички пат" as a number mismatch.
+        add("железнички", "железнички", &["adj", "m", "sg", "nom", "ind"]);
         add("професор", "професор", &["n", "m", "sg", "nom", "ind"]);
         add("право", "право", &["n", "nt", "sg", "nom", "ind"]);
         add("референдум", "референдум", &["n", "m", "sg", "nom", "ind"]);
@@ -927,6 +1133,70 @@ mod tests {
         assert_eq!(found.len(), 1, "{found:?}");
         assert_eq!(found[0].rule, rule::L_PARTICIPLE);
         assert!(found[0].suggestions.is_empty(), "{:?}", found[0].suggestions);
+    }
+
+    #[test]
+    fn flags_an_adjective_disagreeing_with_its_noun() {
+        let found = run_rule("убаво книга", rule::ADJ_AGREEMENT);
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].severity, Severity::Error);
+        assert_eq!(found[0].text, "убаво книга");
+    }
+
+    #[test]
+    fn agreeing_adjectives_are_left_alone() {
+        assert!(run_rule("убава книга", rule::ADJ_AGREEMENT).is_empty());
+        assert!(run_rule("убавата книга", rule::ADJ_AGREEMENT).is_empty());
+        assert!(run_rule("добар град", rule::ADJ_AGREEMENT).is_empty());
+    }
+
+    #[test]
+    fn an_adjective_missing_gender_or_number_is_not_evidence() {
+        // `секаков` has a masculine adjective reading but no number at all.
+        assert!(run_rule("секаков книга", rule::ADJ_AGREEMENT).is_empty());
+    }
+
+    #[test]
+    fn flags_a_verb_disagreeing_with_its_subject() {
+        let found = run_rule("тој сакаат", rule::VERB_AGREEMENT);
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].severity, Severity::Error);
+        assert_eq!(found[0].text, "тој сакаат");
+    }
+
+    #[test]
+    fn agreeing_verbs_are_left_alone() {
+        assert!(run_rule("тој сака", rule::VERB_AGREEMENT).is_empty());
+        assert!(run_rule("тие сакаат", rule::VERB_AGREEMENT).is_empty());
+        assert!(run_rule("таа даде", rule::VERB_AGREEMENT).is_empty());
+    }
+
+    #[test]
+    fn clitics_and_negation_do_not_break_the_subject_chain() {
+        // тој (3sg) + ја (clitic) + даде (3sg): agreement still holds.
+        assert!(run_rule("тој ја даде", rule::VERB_AGREEMENT).is_empty());
+        assert!(run_rule("тој не сака", rule::VERB_AGREEMENT).is_empty());
+        // ...and a real mismatch is still caught through them.
+        assert_eq!(run_rule("тој не сакаат", rule::VERB_AGREEMENT).len(), 1);
+    }
+
+    #[test]
+    fn negation_is_not_mistaken_for_a_subject() {
+        // `не` also reads as a first-person plural clitic. It has no `nom`
+        // reading, so it must never anchor this rule.
+        assert!(run_rule("не сака", rule::VERB_AGREEMENT).is_empty());
+    }
+
+    #[test]
+    fn non_finite_verbs_are_not_judged() {
+        // `прави` in its verb reading is an imperative: no person, no verdict.
+        assert!(run_rule("тој прави", rule::VERB_AGREEMENT).is_empty());
+    }
+
+    #[test]
+    fn an_ambiguous_subject_is_not_judged() {
+        // `они` reads as both 3pl and 2pl, so nothing can be concluded.
+        assert!(run_rule("они сака", rule::VERB_AGREEMENT).is_empty());
     }
 
     #[test]

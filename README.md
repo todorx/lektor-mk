@@ -40,9 +40,9 @@ Honest measurements, not marketing. Live Wikipedia sample, reproducible via `too
 | Bigrams | 50,000 pairs ex Macedonian Wikipedia → **1.47 MB** (`mk.bigram`, optional) |
 | Extension total | FST + morph + freq → **4.8 MB**, + bigram → **6.2 MB**, still local-only and offline |
 | Throughput | 17,782 words in **0.95 s** |
-| Flag rate on Macedonian Wikipedia | **2.78%** over 17,104 words (down from 5.13% — the gazetteer below) |
+| Flag rate on Macedonian Wikipedia | **2.79%** over 17,104 words (down from 5.13% — the gazetteer below; the two agreement rules add 2 of these flags, one a true positive) |
 | Morphology coverage | 83.5% of tokens; 70.6% of adjacent pairs |
-| Grammar on Wikipedia | 4 `MK_L_PARTICIPLE` + 3 `MK_SPACE_BEFORE_PUNCT` hits (all verified true), 0 everywhere else |
+| Grammar on Wikipedia | 4 `MK_L_PARTICIPLE` + 3 `MK_SPACE_BEFORE_PUNCT` + 2 `MK_ADJ_AGREEMENT` hits (all verified true), 0 everywhere else |
 | `MK_DOUBLE_DEFINITE` false positives | **0** in 17,782 words of edited prose |
 
 That last row is the number the project lives or dies by. A proofreader that cries wolf gets switched off — every rule ships with positive *and* negative test cases and is gated on precision before release.
@@ -128,6 +128,8 @@ python tools/probe.py data/mk.fst tools/probe_words.txt           # curated prob
 | Rule | What it finds |
 |---|---|
 | `MK_SPELL` | Word absent from the lexicon, with ranked suggestions |
+| `MK_ADJ_AGREEMENT` | Adjective disagreeing with its noun in gender or number: `убаво книга` ✗ |
+| `MK_VERB_AGREEMENT` | Finite verb disagreeing with its subject in person or number: `тој сакаат` ✗ |
 | `MK_HOMOGLYPH` | Latin `a c e o p s x y` hiding inside Cyrillic words |
 | `MK_FOREIGN_CYRILLIC` | Serbian `ђ ћ`, Russian `ъ ы э я ю`, Bulgarian `щ` |
 | `MK_LATIN_TEXT` | Macedonian typed in Latin letters, converted back |

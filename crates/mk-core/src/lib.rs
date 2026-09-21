@@ -23,6 +23,7 @@ pub mod homoglyph;
 pub mod levenshtein;
 pub mod lexicon;
 pub mod morphology;
+pub mod realword;
 pub mod tokenizer;
 pub mod translit;
 

@@ -13,15 +13,15 @@ const {
 
 const diag = (rule, text) => ({ rule, text, severity: "error", message: "m", suggestions: [] });
 
-// 1. Catalogue integrity: 13 unique engine IDs in known groups.
-assert.strictEqual(MK_RULES.length, 13, "rule catalogue size");
+// 1. Catalogue integrity: 15 unique engine IDs in known groups.
+assert.strictEqual(MK_RULES.length, 15, "rule catalogue size");
 assert.deepStrictEqual(
   MK_RULES.map((r) => r.id).sort(),
   [
-    "MK_CLITIC_ORDER", "MK_DATIVE_I", "MK_DOUBLE_DEFINITE", "MK_FOREIGN_CYRILLIC",
-    "MK_HOMOGLYPH", "MK_L_PARTICIPLE", "MK_LATIN_TEXT", "MK_NAJ_SEPARATED",
-    "MK_NE_FUSED", "MK_PO_SEPARATED", "MK_SENTENCE_CAPITAL", "MK_SPACE_BEFORE_PUNCT",
-    "MK_SPELL",
+    "MK_ADJ_AGREEMENT", "MK_CLITIC_ORDER", "MK_DATIVE_I", "MK_DOUBLE_DEFINITE",
+    "MK_FOREIGN_CYRILLIC", "MK_HOMOGLYPH", "MK_L_PARTICIPLE", "MK_LATIN_TEXT",
+    "MK_NAJ_SEPARATED", "MK_NE_FUSED", "MK_PO_SEPARATED", "MK_SENTENCE_CAPITAL",
+    "MK_SPACE_BEFORE_PUNCT", "MK_SPELL", "MK_VERB_AGREEMENT",
   ].sort()
 );
 for (const r of MK_RULES) {

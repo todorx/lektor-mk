@@ -43,6 +43,10 @@ pub mod rule {
     pub const PO_SEPARATED: &str = "MK_PO_SEPARATED";
     /// Whitespace before closing punctuation: `здраво ,` ✗.
     pub const SPACE_BEFORE_PUNCT: &str = "MK_SPACE_BEFORE_PUNCT";
+    /// An adjective disagreeing with its noun: `убаво жена` ✗.
+    pub const ADJ_AGREEMENT: &str = "MK_ADJ_AGREEMENT";
+    /// A finite verb disagreeing with its subject: `тој сакаат` ✗.
+    pub const VERB_AGREEMENT: &str = "MK_VERB_AGREEMENT";
 }
 
 /// One problem found in the text.
