@@ -81,13 +81,15 @@ assert.strictEqual(applySuggestionText("ab", -5, 1, "X"), "Xb");
 // 4. Empty replacement deletes the span.
 assert.strictEqual(applySuggestionText("не сака", 0, 2, ""), " сака");
 
-// 5. Failed check renders an error, never "Нема грешки" (masked failure).
+// 5. Failed check renders an error, never "Нема грешки" (masked failure),
+// with the backend's reason so a screenshot alone can diagnose it.
 (async () => {
-  mockCheckResponse = { ok: false, error: "boom" };
+  mockCheckResponse = { ok: false, error: "missing mk.fst" };
   elements["in"].value = "убавата книгата е на масата";
   await runCheck();
   assert.notStrictEqual(elements["out"].textContent, "Нема грешки.");
   assert.match(elements["out"].textContent, /Грешка/);
+  assert.match(elements["out"].textContent, /missing mk\.fst/);
 
   // 6. Degraded (spell-only) check says so instead of looking clean.
   mockCheckResponse = { ok: true, degraded: true, json: "[]" };

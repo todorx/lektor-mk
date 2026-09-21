@@ -124,9 +124,11 @@ async function runCheck() {
   try {
     const res = await browser.runtime.sendMessage({ type: "mk-check", text: $("in").value });
     // A failed check used to render as "Нема грешки" — never mask it.
+    // The backend reason is shown so a screenshot alone can diagnose.
     if (!res || !res.ok) {
       lastDiags = [];
-      out.textContent = "Грешка при проверката.";
+      const why = res && res.error ? " " + String(res.error).slice(0, 160) : "";
+      out.textContent = "Грешка при проверката." + why;
       return;
     }
     const diags = JSON.parse(res.json);
