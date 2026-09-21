@@ -1,5 +1,41 @@
-Reviewer notes for Лектор-МК (Firefox, MV3, local-only).
-BUILD REPRO: python tools/build_extension.py runs: cargo build -p mk-wasm --target wasm32-unknown-unknown --release, then wasm-bindgen --target no-modules (CLI version pinned to Cargo.lock; prebuilt binary fetched to tools/bin, no cargo install) into extension/mk_pkg/, then copies data/mk.{fst,morph,freq,bigram} next to the extension.
-WASM GLUE: extension/mk_pkg/mk_wasm.js is unmodified wasm-bindgen output (plus .d.ts), not hand-minified.
-DATA PROVENANCE (counts/lists only, no article text ships): base wordlist gerazov/dictionary-mk (GPL-2.0, hence project GPL-3.0-or-later); morphology expanded from apertium-mkd paradigms (GPL) via tools/expand_apertium.py; unigram/bigram counts (top 40k/50k) from the MK Wikipedia dump (CC BY-SA 4.0, counts only); proper-noun gazetteer from Wikipedia titles, reviewed before commit. Rebuild steps: README "Build from source".
-PERMISSIONS: activeTab (per-site toggle + popup host detection), storage (settings/user dict), clipboardWrite (copy suggestion on click). No remote code, no network calls.
+Reviewer notes for Лектор-МК (Firefox, Manifest V3, fully local) — version 0.1.2.
+
+PUBLIC SOURCE CODE
+The complete source is public: https://github.com/todorx/lektor-mk
+This release is tagged v0.1.2 in that repository. The source zip uploaded with this version is produced by git archive from that tag, so the code you review there and the code in the zip are the same commit.
+
+BUILD REPRODUCTION
+python tools/build_extension.py performs the whole build:
+  1. cargo build -p mk-wasm --target wasm32-unknown-unknown --release
+  2. wasm-bindgen --target no-modules (CLI version pinned in Cargo.lock; a prebuilt binary is fetched into tools/bin, so no cargo install is required)
+  3. copies data/mk.{fst,morph,freq,bigram} into extension/
+python tools/build_release.py --version 0.1.2 then packages extension/ with web-ext build and gates on addons-linter.
+
+WHAT IS NOT IN THE REPOSITORY
+Only rebuilt and third-party artifacts are gitignored: the compiled data files (data/*.fst, *.morph, *.freq, *.bigram), the wasm-bindgen CLI binary (tools/bin/), and the generated extension/mk_pkg/. No source is withheld. Data rebuild steps are in README, section "Build from source".
+
+NO REMOTE CODE
+All JavaScript, CSS and HTML ships inside the add-on. The WebAssembly module is compiled from the Rust sources in this repository. Nothing is fetched, evaluated, or updated at runtime.
+
+WASM GLUE
+extension/mk_pkg/mk_wasm.js is unmodified wasm-bindgen output (plus its .d.ts), not hand-written or minified.
+
+DATA PROVENANCE (counts and lists only; no article text ships)
+- Base wordlist: gerazov/dictionary-mk (GPL-2.0), which is why this project is GPL-3.0-or-later.
+- Morphology: paradigms expanded from apertium-mkd (GPL) via tools/expand_apertium.py.
+- Frequency and bigram counts: top 40k unigrams and 50k pairs from the Macedonian Wikipedia dump (CC BY-SA 4.0) — counts only, never article text.
+- Proper-noun gazetteer: derived from Wikipedia titles, reviewed before commit.
+
+PERMISSIONS
+- activeTab: recognise the current site for the per-site pause toggle.
+- storage: settings, rule toggles, personal dictionary, per-site list.
+- clipboardWrite: copy a suggested correction when it is clicked.
+No other permissions are requested.
+
+NETWORK AND DATA COLLECTION
+The add-on makes zero network requests and collects no data.
+browser_specific_settings.gecko.data_collection_permissions is "none".
+There is no telemetry, no analytics, and no account.
+
+ANDROID
+browser_specific_settings.gecko_android targets Firefox for Android 142+ (that is the version that introduced the data_collection_permissions key). Verified on Firefox for Android 156 x86_64 in an Android emulator (API 37): inline checking, the toolbar popup and the options page all work, and diagnostics match the reference CLI engine.
