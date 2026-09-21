@@ -75,6 +75,7 @@ button.mk-link { border: 0; background: none; color: #b91c1c; padding: 0; }
 .mk-list { list-style: none; margin: 4px 0 0; padding: 0; }
 .mk-list-row { display: flex; justify-content: space-between; align-items: center; padding: 4px 0; }
 .mk-empty { color: #888; font-size: 13px; }
+.mk-warn { color: #92400e; font-size: 13px; margin: 6px 0 0; }
 .mk-hint { font-size: 12px; color: #666; margin: 0 0 6px; }
 .mk-rules-head { display: flex; justify-content: space-between; align-items: center; }
 footer { display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: #777; padding: 2px 4px; }
@@ -82,6 +83,7 @@ footer { display: flex; justify-content: space-between; align-items: center; fon
 @media (prefers-color-scheme: dark) {
   body { color: #e4e4e7; background: #18181b; }
   h2, p, .mk-row small, .mk-hint, footer, .mk-empty { color: #a1a1aa; }
+  .mk-warn { color: #fbbf24; }
   h3 { color: #d4d4d8; }
   .mk-card { background: #27272a; border-color: #3f3f46; }
   .mk-row { border-color: #3f3f46; }

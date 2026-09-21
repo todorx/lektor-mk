@@ -2,6 +2,9 @@
 // Local-only: the lexicon and morphology load once into this background page
 // and every check runs here. No text ever leaves the machine.
 let checkerPromise = null;
+// True when the checker fell back to spell-only (morphology unreadable).
+// Reported with every check so the UI never mistakes it for a clean bill.
+let spellOnly = false;
 
 async function loadBytes(name) {
   const res = await fetch(browser.runtime.getURL(name));
@@ -19,6 +22,7 @@ async function getChecker() {
         checker = wasm_bindgen.WasmChecker.with_grammar(fst, await loadBytes("mk.morph"));
       } catch (e) {
         console.warn("mk: morphology unavailable, spell-only mode", e);
+        spellOnly = true;
         checker = new wasm_bindgen.WasmChecker(fst);
       }
       try {
@@ -57,7 +61,7 @@ browser.runtime.onMessage.addListener((msg) => {
   // rather than freezing the page on paste dumps.
   const text = msg.text.slice(0, 20000);
   return Promise.all([getChecker(), loadSettings()]).then(
-    ([c, settings]) => ({ ok: true, json: JSON.stringify(applySettings(JSON.parse(c.check(text)), settings)) }),
+    ([c, settings]) => ({ ok: true, degraded: spellOnly, json: JSON.stringify(applySettings(JSON.parse(c.check(text)), settings)) }),
     (e) => ({ ok: false, error: String(e) })
   );
 });

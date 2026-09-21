@@ -117,11 +117,24 @@ $("go").addEventListener("click", runCheck);
 
 async function runCheck() {
   const out = $("out");
+  const warn = $("degraded");
   out.textContent = "Проверува…";
+  warn.hidden = true;
+  warn.textContent = "";
   try {
     const res = await browser.runtime.sendMessage({ type: "mk-check", text: $("in").value });
-    const diags = res && res.ok ? JSON.parse(res.json) : [];
+    // A failed check used to render as "Нема грешки" — never mask it.
+    if (!res || !res.ok) {
+      lastDiags = [];
+      out.textContent = "Грешка при проверката.";
+      return;
+    }
+    const diags = JSON.parse(res.json);
     lastDiags = diags;
+    if (res.degraded) {
+      warn.textContent = "Само правопис — морфологијата не е вчитана. Реинсталирајте го додатокот.";
+      warn.hidden = false;
+    }
     out.innerHTML = diags.length
       ? diags
           .map(
@@ -169,5 +182,5 @@ function applySuggestion(di, si) {
 
 // Export for node tests; in the browser the consts are globals.
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { applySuggestionText };
+  module.exports = { applySuggestionText, runCheck, applySuggestion };
 }
