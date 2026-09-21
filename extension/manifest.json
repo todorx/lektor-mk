@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Лектор-МК",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Local-only Macedonian spelling and grammar checker. No text ever leaves your machine.",
   "browser_specific_settings": {
     "gecko": {
@@ -10,6 +10,9 @@
         "required": ["none"]
       },
       "strict_min_version": "140.0"
+    },
+    "gecko_android": {
+      "strict_min_version": "142.0"
     }
   },
   "permissions": ["activeTab", "storage", "clipboardWrite"],
