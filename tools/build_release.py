@@ -88,14 +88,22 @@ def sanity(version):
 
 
 def lint_zip(zipp):
-    run("npx", "--yes", "addons-linter", str(zipp),
-        "--output", "json", "--output-file", str(DIST / "lint.json"))
-    summary = json.loads((DIST / "lint.json").read_text(encoding="utf-8"))["summary"]
+    exe = shutil.which("npx") or fail("npx not found on PATH")
+    print("+", exe, "--yes addons-linter", zipp, "--output json")
+    proc = subprocess.run(
+        [exe, "--yes", "addons-linter", str(zipp), "--output", "json"],
+        cwd=ROOT, capture_output=True, text=True)
+    try:
+        report = json.loads(proc.stdout[proc.stdout.index("{"):])
+    except (ValueError, IndexError):
+        print(proc.stdout[-2000:])
+        fail("addons-linter produced no JSON (exit " + str(proc.returncode) + ")")
+    (DIST / "lint.json").write_text(json.dumps(report), encoding="utf-8")
+    summary = report["summary"]
     print(f"linter: {summary['errors']} errors, "
           f"{summary['warnings']} warnings, {summary['notices']} notices")
     if summary["errors"]:
-        errs = json.loads((DIST / "lint.json").read_text(encoding="utf-8"))["errors"]
-        for m in [x for x in errs if x.get("type") == "error"][:5]:
+        for m in [x for x in report["errors"] if x.get("type") == "error"][:5]:
             print("ERROR", m.get("file", "?") + ":" +
                   str(m.get("line", "?")), m.get("message", "")[:200])
         fail("linter errors — fix and re-run")
