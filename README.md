@@ -1,12 +1,18 @@
-<img src="extension/icons/icon.svg" width="96" alt="Лектор-МК">
+<p align="center">
+  <img src="logo.png" width="120" alt="Лектор-МК">
+</p>
 
-# Лектор-МК
+<h1 align="center">Лектор-МК</h1>
 
-[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
-[![Firefox](https://img.shields.io/badge/Firefox-extension-orange.svg)](https://www.mozilla.org/firefox/)
-[![Offline](https://img.shields.io/badge/offline-100%25-green.svg)](#why-local-only)
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPLv3-blue.svg" alt="License: GPL v3"></a>
+  <a href="https://www.mozilla.org/firefox/"><img src="https://img.shields.io/badge/Firefox-extension-orange.svg" alt="Firefox"></a>
+  <a href="#why-local-only"><img src="https://img.shields.io/badge/offline-100%25-green.svg" alt="Offline"></a>
+</p>
 
-*Проверка на правопис и граматика за македонски — целосно локално, без сервер, без интернет.*
+<p align="center">
+  <em>Проверка на правопис и граматика за македонски — целосно локално, без сервер, без интернет.</em>
+</p>
 
 Macedonian is not supported by LanguageTool, Grammarly, or any other serious proofreading tool. Лектор-МК is an attempt at the first real one: a spelling and grammar checker that runs **entirely on your machine** — no text ever leaves the browser.
 
