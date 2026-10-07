@@ -6,7 +6,7 @@ Macedonian is not supported by LanguageTool, Grammarly, or any other serious pro
 
 19 rules, each with positive and negative tests:
 
-- **Spelling** — 427,464 forms in a compact FST (1.25 MB), with suggestions ranked by frequency.
+- **Spelling** — 880,826 forms in a compact FST (1.50 MB), with suggestions ranked by frequency.
 - **Adjective agreement** — `убаво книга` → the adjective must agree with its noun in gender and number.
 - **Subject–verb agreement** — `тој сакаат` → the verb must agree with its subject in person and number.
 - **Mixed scripts** — Latin letters hidden inside Cyrillic words (`мaкeдoнски`), invisible to the eye.
@@ -39,16 +39,16 @@ The toolbar popup offers a quick check of pasted text and next-word autocomplete
 
 ## Accuracy
 
-Every rule is precision-gated: it does not ship unless it reports zero false positives on a Macedonian Wikipedia sample. The flag rate is 2.78% over 17,104 words, and `MK_DOUBLE_DEFINITE` has 0 false positives across 17,782 words of edited prose. Rules change; the bar does not: precision before recall.
+Every rule is precision-gated: it does not ship unless it reports zero false positives on a Macedonian Wikipedia sample. The flag rate is 1.49% over 17,104 words, and `MK_DOUBLE_DEFINITE` has 0 false positives across 17,782 words of edited prose. Rules change; the bar does not: precision before recall.
 
 ## Compatibility
 
 - Firefox 140+ on desktop, and Firefox for Android 142+.
 - Works in text areas, text inputs and rich-text (contenteditable) editors. Google Docs draws text on a canvas that extensions cannot read: paste into the toolbar popup instead.
-- About 2.2 MB to download, about 6.2 MB installed.
+- About 2.5 MB to download, about 6.8 MB installed.
 
 ## License and source
 
-GPL-3.0-or-later. Everything is open: the base wordlist (gerazov/dictionary-mk, GPL-2.0), the paradigms expanded from Apertium (GPL), and counts only from Macedonian Wikipedia (CC BY-SA 4.0) — Wikipedia article text is never distributed.
+GPL-3.0-or-later. Everything is open: the base wordlist (gerazov/dictionary-mk, GPL-2.0), the paradigms expanded from Apertium (GPL), inflected forms from Wiktionary via kaikki.org (CC BY-SA 4.0), and counts only from Macedonian Wikipedia (CC BY-SA 4.0) — Wikipedia article text is never distributed.
 
 The engine is Rust compiled to WebAssembly, with no I/O and no platform assumptions. The same code backs the test CLI and a future desktop build.

@@ -34,13 +34,14 @@ Honest measurements, not marketing. Live Wikipedia sample, reproducible via `too
 
 | | |
 |---|---|
-| Lexicon | 427,464 forms → **1.25 MB** FST (8.2× smaller than the raw list) |
+| Lexicon | 880,826 forms → **1.50 MB** FST (16.7× smaller than the raw list) |
 | Morphology | 161,953 forms, 30,380 lemmas → **2.65 MB** |
 | Frequencies | 40,000 words ex Macedonian Wikipedia → **0.86 MB** (`mk.freq`, optional) |
 | Bigrams | 50,000 pairs ex Macedonian Wikipedia → **1.47 MB** (`mk.bigram`, optional) |
-| Extension total | FST + morph + freq → **4.8 MB**, + bigram → **6.2 MB**, still local-only and offline |
+| Extension total | FST + morph + freq → **5.0 MB**, + bigram → **6.5 MB**, still local-only and offline |
 | Throughput | 17,782 words in **0.95 s** |
-| Flag rate on Macedonian Wikipedia | **2.79%** over 17,104 words (down from 5.13% — the gazetteer below; the two agreement rules add 2 of these flags, one a true positive) |
+| Flag rate on Macedonian Wikipedia | **1.49%** over 17,104 words (down from 5.13%: the gazetteer took it to 2.79%, Wiktionary forms to 1.49%) |
+| Typos still caught | 92.4% of 2,446 single-edit typos of frequent words (`tools/eval_typos.py`); was 93.1% before the Wiktionary forms |
 | Morphology coverage | 83.5% of tokens; 70.6% of adjacent pairs |
 | Grammar on Wikipedia | 4 `MK_L_PARTICIPLE` + 3 `MK_SPACE_BEFORE_PUNCT` + 2 `MK_ADJ_AGREEMENT` hits (all verified true), 0 everywhere else |
 | Grammar gate | 46 labelled sentences (`tools/context_probe.tsv`): **0** false positives on the correct ones, 27/27 injected slips caught |
@@ -51,7 +52,9 @@ That last row is the number the project lives or dies by. A proofreader that cri
 The flag rate is not an error rate. Before the gazetteer it was dominated by two known gaps:
 
 * **Proper nouns** (`Глигоров`, `Визбегово`, `Неделковски`). The upstream dictionary contains no names or toponyms at all. Covered since by the Wikipedia-title gazetteer (71,109 names), which cut the rate from 5.13% to 2.78%.
-* **Morphological gaps** (`референдумското`, `старословенскиот`). Correctly-formed Macedonian the frozen word list never enumerated — the case for deriving paradigms from Apertium rather than shipping a frozen word list.
+* **Morphological gaps** (`референдумското`, `старословенскиот`). Correctly-formed Macedonian the frozen word list never enumerated — the case for deriving paradigms from Apertium rather than shipping a frozen word list. Wiktionary's inflection tables (453k forms the other sources lacked) then cut spelling flags on the sample from 378 to 156.
+
+Growing the lexicon has a price: every added form can make a typo look like a word. `tools/eval_typos.py` measures it, and Wiktionary entries marked nonstandard, dialectal, regional, archaic or obsolete in every sense are left out for exactly that reason (`праи`, `глеа`).
 
 The script rules fare even better, and found genuine errors *in Wikipedia itself*: 13 occurrences of `сè` spelled with Latin `è` (U+00E8) instead of Cyrillic `ѐ` (U+0450), plus `селa`, `театарскa`, `филмскa` carrying a Latin `a` mid-word. Invisible to a reader; exactly the failure mode the rule exists for.
 
@@ -108,12 +111,14 @@ tools/expand_apertium.py \
     data/raw/apertium-mkd/apertium-mkd.mkd.dix \
     data/interim/mk_morph.tsv \
     data/interim/mk_apertium_forms.txt                           # expand paradigms
+python tools/expand_wiktionary.py                                # Wiktionary forms (needs data/raw/kaikki-mk.jsonl)
 python tools/build_gazetteer.py                                  # proper-noun gazetteer
 cargo run --release -p mk-cli -- build-lexicon \
     data/interim/mk_wordlist.utf8.txt \
     data/supplement/mk_supplement.txt \
     data/supplement/mk_names.txt \
     data/interim/mk_apertium_forms.txt \
+    data/interim/mk_wiktionary_forms.txt \
     data/mk.fst                                                  # compile the lexicon
 cargo run --release -p mk-cli -- build-morph \
     data/interim/mk_morph.tsv data/mk.morph                      # compile morphology
@@ -175,6 +180,7 @@ Every source, what it is used for, and under what terms. Only counts and curated
 |---|---|---|
 | [gerazov/dictionary-mk](https://github.com/gerazov/dictionary-mk) (OSSM, Taras Bendik) | Base wordlist, 261,460 forms | GPL-2.0 |
 | [apertium-mkd](https://github.com/apertium/apertium-mkd) | Paradigm expansion → morphology + inflected forms | GPL |
+| [kaikki.org](https://kaikki.org/dictionary/Macedonian/) Wiktextract of English Wiktionary (Ylonen, LREC 2022) | Inflected forms for the spelling lexicon (`expand_wiktionary.py`) | CC BY-SA 4.0 / GFDL |
 | MK Wikipedia article dump (`mkwiki-latest-pages-articles`) | Word/bigram counts only (top 40k unigrams, top 50k pairs) | CC BY-SA 4.0 (counts ship, text never ships) |
 | MK Wikipedia title dump (`mkwiki-latest-all-titles-in-ns0`) | Proper-noun gazetteer (`mk_names.txt`), reviewed before commit | CC BY-SA 4.0 |
 | Curated `data/supplement/` | Hand-reviewed gap fills (accents, abbreviations, compounds) | Same as this project |
