@@ -107,6 +107,18 @@ async function init() {
       await saveSettings(settings);
     }, 400);
   });
+  // Ignored words are the user's false positives: the only feedback channel
+  // is a file they choose to send. No network, no permission needed.
+  $("exportWords").addEventListener("click", () => {
+    const head = `# Лектор-МК ${browser.runtime.getManifest().version}: игнорирани зборови`;
+    const blob = new Blob([[head, ...settings.userWords].join("\n") + "\n"], { type: "text/plain" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "lektor-mk-ignored.txt";
+    a.click();
+    // Revoking in the same tick can cancel the download in Firefox.
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  });
   $("search").addEventListener("input", renderRules);
   $("reset").addEventListener("click", async () => {
     const keep = settings;
