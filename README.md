@@ -43,6 +43,7 @@ Honest measurements, not marketing. Live Wikipedia sample, reproducible via `too
 | Flag rate on Macedonian Wikipedia | **2.79%** over 17,104 words (down from 5.13% — the gazetteer below; the two agreement rules add 2 of these flags, one a true positive) |
 | Morphology coverage | 83.5% of tokens; 70.6% of adjacent pairs |
 | Grammar on Wikipedia | 4 `MK_L_PARTICIPLE` + 3 `MK_SPACE_BEFORE_PUNCT` + 2 `MK_ADJ_AGREEMENT` hits (all verified true), 0 everywhere else |
+| Grammar gate | 46 labelled sentences (`tools/context_probe.tsv`): **0** false positives on the correct ones, 27/27 injected slips caught |
 | `MK_DOUBLE_DEFINITE` false positives | **0** in 17,782 words of edited prose |
 
 That last row is the number the project lives or dies by. A proofreader that cries wolf gets switched off — every rule ships with positive *and* negative test cases and is gated on precision before release.
@@ -62,7 +63,7 @@ text
   ├─ [0] tokenize        Macedonian-aware: к'смет, црно-бел, д-р, 1-ви
   ├─ [1] spell           FST lexicon + Unicode-correct Levenshtein automaton
   ├─ [2] morphology      lemma + POS + features, expanded from Apertium
-  ├─ [3] grammar rules   declarative data (TOML), precision-gated
+  ├─ [3] grammar rules   morphology-driven, precision-gated
   ├─ [4] ranking         unigram frequency + Macedonian confusion costs (к/ќ, е/ѐ),
   │                      bigram context when the table is loaded
   ▼
@@ -84,6 +85,10 @@ python tools/build_extension.py   # wasm + glue + data/mk.fst + data/mk.morph
 ```
 
 Then `about:debugging` → This Firefox → Load Temporary Add-on → `extension/manifest.json`. Text fields get inline wavy underlines as you type (click one for fixes), and the toolbar popup checks pasted text plus next-word autocomplete from bigram counts. All on-device, all offline.
+
+Where inline checking works: `<textarea>`, text and search `<input>`s, and `contenteditable` editors in the page itself. Where it does not: **Google Docs** draws its text on a canvas, so no extension can read it — paste the text into the toolbar popup instead. Editors that live inside an `<iframe>` are not reached either. Password, email and number fields are never read.
+
+Ignoring a flagged word adds it to the personal dictionary. If you ignore words that are correct Macedonian, *Settings → Личен речник → Извези* saves them to a text file you can attach to an issue — that is the only way feedback leaves your machine.
 
 **CLI** (for testing and corpus evaluation):
 
@@ -112,7 +117,7 @@ cargo run --release -p mk-cli -- build-lexicon \
     data/mk.fst                                                  # compile the lexicon
 cargo run --release -p mk-cli -- build-morph \
     data/interim/mk_morph.tsv data/mk.morph                      # compile morphology
-cargo test                                                       # run the suite (128+ tests)
+cargo test                                                       # run the suite (155+ tests)
 ```
 
 Evaluate on live Wikipedia text and inspect coverage:
@@ -121,7 +126,18 @@ Evaluate on live Wikipedia text and inspect coverage:
 python tools/eval_wiki.py data/mk.fst data/mk.morph               # flag rate + rule breakdown
 python tools/flagshape.py data/mk.fst                             # shape of spelling flags
 python tools/probe.py data/mk.fst tools/probe_words.txt           # curated probe list
+python tools/eval_context.py data/mk.fst data/mk.morph            # grammar gate: labelled slips + clean prose
 ```
+
+`tools/context_probe.tsv` is the grammar gate: correct sentences that must stay silent (including first-person and colloquial prose, which Wikipedia barely contains) and the same sentences with one injected error that must be caught. It is hand-written, so its recall figure measures the rules against known targets, not against real-world error rates.
+
+Find words the lexicon is missing, from any corpus you have (plain text or a MediaWiki XML dump such as `mkwikisource-latest-pages-articles.xml.bz2`):
+
+```bash
+python tools/mine_gaps.py corpus.txt [more.xml.bz2 ...]            # -> data/interim/gap_candidates.tsv
+```
+
+The output is a ranked review list, never an automatic import: proper nouns go to the gazetteer, missing lemmas to the Apertium paradigms, and only whole categories to `data/supplement/`.
 
 ## What it currently catches
 
@@ -142,8 +158,14 @@ python tools/probe.py data/mk.fst tools/probe_words.txt           # curated prob
 | `MK_SENTENCE_CAPITAL` | Lowercase sentence start |
 | `MK_PO_SEPARATED` | `по` split from the graded word: `по добар` ✗, `подобар` ✓ |
 | `MK_SPACE_BEFORE_PUNCT` | Space before closing punctuation |
+| `MK_NUMERAL_GENDER` | `два` with a feminine noun or `две` with a masculine one: `два книги` ✗, `две книги` ✓ |
+| `MK_COUNT_FORM` | Plain plural after a numeral where a count form exists: `пет градови` → `пет града` |
+| `MK_OBJECT_DOUBLING` | A definite object without its clitic, after a first- or second-person verb: `Видов книгата` → `Ја видов книгата` |
+| `MK_SERBIANISM` | Serbian words with the Macedonian one as the fix: `увек` → `секогаш`, `сутра` → `утре` |
 
-Planned next: object reduplication (`Ја видов Марија` ✓), numeral forms (`два стола`), a Serbianism style layer. Grammar rules are declarative TOML under `data/rules/`, so someone who knows Macedonian grammar but not Rust can add them.
+Deliberately narrow, for precision: object doubling ignores third-person verbs (`Така рече човекот` is verb–subject order, not a missing clitic), proper-noun objects and time adverbials (`Работев ноќта`); numeral gender ignores neuter nouns. Not yet covered: tense and mood slips that are themselves real words (`ја види` for `ја виде`).
+
+Grammar rules are Rust functions in `crates/mk-core/src/grammar.rs`, each with positive and negative tests. `data/rules/` holds a sketch of a declarative format that is not read by the engine yet.
 
 ## Data provenance and licensing
 

@@ -4,7 +4,7 @@ Macedonian is not supported by LanguageTool, Grammarly, or any other serious pro
 
 ## What it checks
 
-15 rules, each with positive and negative tests:
+19 rules, each with positive and negative tests:
 
 - **Spelling** — 427,464 forms in a compact FST (1.25 MB), with suggestions ranked by frequency.
 - **Adjective agreement** — `убаво книга` → the adjective must agree with its noun in gender and number.
@@ -18,11 +18,14 @@ Macedonian is not supported by LanguageTool, Grammarly, or any other serious pro
 - **L-participle agreement** — `таа дошол` ✗, does not agree with its subject.
 - **Fused не** — `несака` → `не сака`.
 - **Separated нај and по** — `нај добар` → `најдобар`, `по добар` → `подобар`.
+- **Numerals** — `два книги` → `две книги`; the count form `пет града`, not `пет градови`.
+- **Object doubling** — `Видов книгата` → `Ја видов книгата`.
+- **Serbianisms** — `увек` → `секогаш`, `сутра` → `утре`.
 - **Punctuation** — lowercase sentence start, space before a closing comma or period.
 
 ## How you use it
 
-As you type in any text field, flagged words get a wavy underline. Click an underline to get a card with the rule name, a short explanation, and a suggested fix you can apply with one click. If the word is correct, add it to your personal dictionary.
+As you type in any text field, flagged words get a wavy underline. Click an underline to get a card with the rule name, a short explanation, and a suggested fix you can apply with one click. If the word is correct, add it to your personal dictionary. You can export that dictionary to a text file and send it to us to help fix false alarms; nothing is sent automatically.
 
 The toolbar popup offers a quick check of pasted text and next-word autocomplete (from a bigram table). Settings give you a master switch, a check delay, a personal dictionary, per-site pausing, and a toggle for every individual rule.
 
@@ -41,6 +44,7 @@ Every rule is precision-gated: it does not ship unless it reports zero false pos
 ## Compatibility
 
 - Firefox 140+ on desktop, and Firefox for Android 142+.
+- Works in text areas, text inputs and rich-text (contenteditable) editors. Google Docs draws text on a canvas that extensions cannot read: paste into the toolbar popup instead.
 - About 2.2 MB to download, about 6.2 MB installed.
 
 ## License and source
