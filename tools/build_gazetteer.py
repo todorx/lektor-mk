@@ -52,6 +52,8 @@ def paths_from_env():
             "MK_GAZETTEER_SUPPLEMENT", os.path.join(ROOT, "data", "supplement", "mk_supplement.txt")),
         "apertium": os.environ.get(
             "MK_GAZETTEER_APERTIUM", os.path.join(ROOT, "data", "interim", "mk_apertium_forms.txt")),
+        "wiktionary": os.environ.get(
+            "MK_GAZETTEER_WIKTIONARY", os.path.join(ROOT, "data", "interim", "mk_wiktionary_forms.txt")),
         "hubs": HUBS if hubs is None else [h.strip() for h in hubs.split(",") if h.strip()],
     }
 
@@ -100,10 +102,10 @@ def current_words(paths, include_names=True):
         if os.path.exists(p):
             with open(p, encoding="utf-8") as fh:
                 have.update(l.strip().lower() for l in fh if l.strip() and not l.startswith("#"))
-    p = paths["apertium"]
-    if os.path.exists(p):
-        with open(p, encoding="utf-8") as fh:
-            have.update(l.strip().lower() for l in fh if l.strip())
+    for p in (paths["apertium"], paths.get("wiktionary", "")):
+        if p and os.path.exists(p):
+            with open(p, encoding="utf-8") as fh:
+                have.update(l.strip().lower() for l in fh if l.strip())
     return have
 
 
