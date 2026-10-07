@@ -18,7 +18,7 @@ text = "\n".join(fetch(t) for t in TITLES)
 fd, tmp = tempfile.mkstemp(suffix=".txt")
 os.write(fd, text.encode("utf-8"))
 os.close(fd)
-cmd = ["target/release/mk.exe", "check", fst]
+cmd = [os.path.join("target", "release", "mk.exe"), "check", fst]
 if morph:
     cmd += ["--morph", morph]
 cmd += ["--file", tmp, "--json"]
