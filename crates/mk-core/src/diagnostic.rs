@@ -47,6 +47,14 @@ pub mod rule {
     pub const ADJ_AGREEMENT: &str = "MK_ADJ_AGREEMENT";
     /// A finite verb disagreeing with its subject: `тој сакаат` ✗.
     pub const VERB_AGREEMENT: &str = "MK_VERB_AGREEMENT";
+    /// `два`/`две` disagreeing with the noun's gender: `два книги` ✗.
+    pub const NUMERAL_GENDER: &str = "MK_NUMERAL_GENDER";
+    /// Plain plural after a numeral where a count form exists: `два градови` ✗.
+    pub const COUNT_FORM: &str = "MK_COUNT_FORM";
+    /// A definite direct object without its clitic: `Видов книгата` ✗.
+    pub const OBJECT_DOUBLING: &str = "MK_OBJECT_DOUBLING";
+    /// A Serbian word in Macedonian text: `увек` ✗, `секогаш` ✓.
+    pub const SERBIANISM: &str = "MK_SERBIANISM";
 }
 
 /// One problem found in the text.

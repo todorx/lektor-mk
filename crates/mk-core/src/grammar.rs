@@ -44,7 +44,210 @@ pub fn check(
     space_before_punct(tokens, &mut out);
     adjective_agreement(tokens, morph, &mut out);
     verb_agreement(tokens, morph, &mut out);
+    numeral_noun(tokens, morph, &mut out);
+    object_doubling(tokens, morph, &mut out);
     out
+}
+
+/// A cardinal numeral and the plural noun it counts.
+///
+/// ```text
+/// два стола, две маси    ✓   два маси, две града   ✗   (MK_NUMERAL_GENDER)
+/// два града, пет дена    ✓   два градови           ✗   (MK_COUNT_FORM)
+/// ```
+///
+/// Gender only for `два`/`две` against an unambiguously masculine or feminine
+/// noun; neuter is left alone. The count form is proposed only when it is a
+/// stored plural of the same lemma (`градови` → `града`), so it is never
+/// invented — and person nouns, which keep the ordinary plural, have no such
+/// stored form.
+fn numeral_noun(tokens: &[Token<'_>], morph: &Morphology, out: &mut Vec<Diagnostic>) {
+    for pair in tokens.windows(2) {
+        let (num, noun) = (&pair[0], &pair[1]);
+        if num.kind != TokenKind::Word || noun.kind != TokenKind::Word {
+            continue;
+        }
+        // A cardinal has no number of its own (ordinals carry sg/pl), and the
+        // personal `двајца` and approximate `десетина` take the plain plural.
+        let num_readings = morph.analyze(num.text);
+        let cardinal = !num_readings.is_empty()
+            && num_readings.iter().all(|a| {
+                a.pos() == Some(Pos::Numeral) && a.number().is_none() && !a.has("ma") && !a.has("apprx")
+            });
+        if !cardinal {
+            continue;
+        }
+        let noun_readings = morph.analyze(noun.text);
+        if noun_readings.is_empty()
+            || !noun_readings.iter().all(|a| {
+                a.pos() == Some(Pos::Noun) && a.number() == Some(Number::Plural) && !a.is_definite()
+            })
+        {
+            continue;
+        }
+        let all_gender = |g: Gender| noun_readings.iter().all(|a| a.gender() == Some(g));
+        let masculine = all_gender(Gender::Masculine);
+
+        let swapped = match num.text.to_lowercase().as_str() {
+            "два" if all_gender(Gender::Feminine) => Some("две"),
+            "две" if masculine => Some("два"),
+            _ => None,
+        };
+        if let Some(fixed) = swapped {
+            out.push(Diagnostic {
+                rule: rule::NUMERAL_GENDER.to_string(),
+                severity: Severity::Error,
+                char_start: num.char_start,
+                char_end: noun.char_end,
+                text: format!("{} {}", num.text, noun.text),
+                message: "Два се употребува со машки род, две со женски.".to_string(),
+                suggestions: vec![format!("{} {}", match_case(num.text, fixed), noun.text)],
+            });
+            continue;
+        }
+        if !masculine {
+            continue;
+        }
+        if let Some(count) = count_form(noun.text, &noun_readings, morph) {
+            out.push(Diagnostic {
+                rule: rule::COUNT_FORM.to_string(),
+                severity: Severity::Warning,
+                char_start: num.char_start,
+                char_end: noun.char_end,
+                text: format!("{} {}", num.text, noun.text),
+                message: "По број, именките од машки род го земаат бројниот облик.".to_string(),
+                suggestions: vec![format!("{} {}", num.text, match_case(noun.text, &count))],
+            });
+        }
+    }
+}
+
+/// The stored count form of a masculine `-ови`/`-еви` plural: `градови` → `града`.
+fn count_form(word: &str, readings: &[Analysis<'_>], morph: &Morphology) -> Option<String> {
+    let lower = word.to_lowercase();
+    let stem = lower.strip_suffix("ови").or_else(|| lower.strip_suffix("еви"))?;
+    let candidate = format!("{stem}а");
+    let same_lemma = morph.analyze(&candidate).iter().any(|c| {
+        c.pos() == Some(Pos::Noun)
+            && c.number() == Some(Number::Plural)
+            && readings.iter().any(|r| r.lemma() == c.lemma())
+    });
+    same_lemma.then_some(candidate)
+}
+
+/// Nouns of time that stand after a verb as adverbials, not objects:
+/// `Работев ноќта`, `Спиев утрото`. Lemmas.
+const TIME_NOUNS: &[&str] = &[
+    "ден", "ноќ", "утро", "вечер", "пладне", "попладне", "недела", "седмица", "месец",
+    "година", "лето", "зима", "пролет", "есен", "викенд", "век", "време", "час", "минута",
+    "секунда", "понеделник", "вторник", "среда", "четврток", "петок", "сабота", "празник",
+    "сезона", "пат",
+];
+
+/// A definite direct object is doubled by a clitic: `Ја видов книгата` ✓,
+/// `Видов книгата` ✗.
+///
+/// Only after a first- or second-person transitive verb. With a third-person
+/// verb the definite noun after it may be the subject (`Така рече човекот`),
+/// and nothing short of a parser can tell; with first or second person it
+/// cannot be, because a subject would have to agree.
+fn object_doubling(tokens: &[Token<'_>], morph: &Morphology, out: &mut Vec<Diagnostic>) {
+    for (i, pair) in tokens.windows(2).enumerate() {
+        let (verb, object) = (&pair[0], &pair[1]);
+        if verb.kind != TokenKind::Word || object.kind != TokenKind::Word {
+            continue;
+        }
+        let verb_readings = morph.analyze(verb.text);
+        let verbs: Vec<&Analysis<'_>> =
+            verb_readings.iter().filter(|a| a.pos() == Some(Pos::Verb)).collect();
+        if verbs.is_empty()
+            || !verbs.iter().any(|a| a.has("tv"))
+            || !verbs.iter().all(|a| person_of(a).is_some_and(|p| p < 3))
+        {
+            continue;
+        }
+        let object_readings = morph.analyze(object.text);
+        if object_readings.is_empty()
+            || !object_readings.iter().all(|a| a.pos() == Some(Pos::Noun) && a.is_definite())
+            || object_readings.iter().any(|a| TIME_NOUNS.contains(&a.lemma()))
+        {
+            continue;
+        }
+        let Some(clitic) = doubling_clitic(&object_readings) else {
+            continue;
+        };
+        // `Сакам децата да учат`: the noun is the subject of the `да` clause.
+        if tokens.get(i + 2).is_some_and(|t| t.text.eq_ignore_ascii_case("да")) {
+            continue;
+        }
+        if has_accusative_clitic_before(tokens, i, morph) {
+            continue;
+        }
+        let fix = if verb.text.starts_with(char::is_uppercase) {
+            format!("{} {} {}", capitalize_first(clitic), verb.text.to_lowercase(), object.text)
+        } else {
+            format!("{} {} {}", clitic, verb.text, object.text)
+        };
+        out.push(Diagnostic {
+            rule: rule::OBJECT_DOUBLING.to_string(),
+            severity: Severity::Warning,
+            char_start: verb.char_start,
+            char_end: object.char_end,
+            text: format!("{} {}", verb.text, object.text),
+            message: "Определениот директен предмет се удвојува со кратка заменка: ја видов книгата."
+                .to_string(),
+            suggestions: vec![fix],
+        });
+    }
+}
+
+/// `го`, `ја` or `ги` for the object, when every reading agrees on one.
+fn doubling_clitic(readings: &[Analysis<'_>]) -> Option<&'static str> {
+    let mut found = None;
+    for a in readings {
+        let clitic = match (a.number()?, a.gender()?) {
+            (Number::Plural, _) => "ги",
+            (Number::Singular, Gender::Feminine) => "ја",
+            (Number::Singular, Gender::Masculine | Gender::Neuter) => "го",
+            _ => return None,
+        };
+        if found.is_some_and(|f| f != clitic) {
+            return None;
+        }
+        found = Some(clitic);
+    }
+    found
+}
+
+/// Is there an accusative clitic in the cluster right before the verb at `i`?
+/// Steps back over clitics, `не`, `ќе` and `да`, at most three words.
+fn has_accusative_clitic_before(tokens: &[Token<'_>], i: usize, morph: &Morphology) -> bool {
+    for t in tokens[..i].iter().rev().take(3) {
+        if t.kind != TokenKind::Word {
+            return false;
+        }
+        let lower = t.text.to_lowercase();
+        if matches!(lower.as_str(), "не" | "ќе" | "да") {
+            continue;
+        }
+        let readings = morph.analyze(t.text);
+        if readings.iter().any(|a| a.has("clt") && a.has("acc")) {
+            return true;
+        }
+        if !readings.iter().any(|a| a.has("clt") || a.has("ref")) {
+            return false;
+        }
+    }
+    false
+}
+
+/// `replacement`, capitalised the way `original` is.
+pub(crate) fn match_case(original: &str, replacement: &str) -> String {
+    if original.starts_with(char::is_uppercase) {
+        capitalize_first(replacement)
+    } else {
+        replacement.to_string()
+    }
 }
 
 /// The definite article attaches to the **first** element of a noun phrase, and
@@ -673,11 +876,17 @@ fn verb_agreement(tokens: &[Token<'_>], morph: &Morphology, out: &mut Vec<Diagno
 
 /// Person and number of a nominative personal pronoun, or `None`.
 ///
-/// Clitics are excluded by the `nom` requirement, and a pronoun whose readings
+/// A form with any clitic reading is excluded, and a pronoun whose readings
 /// disagree about its own person or number is not a subject we can judge.
 fn subject_person(morph: &Morphology, form: &str) -> Option<(u8, Number)> {
+    let readings = morph.analyze(form);
+    // `ти` is also the dative clitic: in `Ти дадов писмото` the subject is
+    // `јас`, not `ти`, and nothing local tells the two apart.
+    if readings.iter().any(|a| a.has("clt")) {
+        return None;
+    }
     let mut found: Option<(u8, Number)> = None;
-    for a in morph.analyze(form) {
+    for a in readings {
         if a.pos() != Some(Pos::Pronoun) || !a.has("nom") {
             continue;
         }
@@ -910,6 +1119,35 @@ mod tests {
         add("право", "право", &["n", "nt", "sg", "nom", "ind"]);
         add("референдум", "референдум", &["n", "m", "sg", "nom", "ind"]);
         add("земјотрес", "земјотрес", &["n", "m", "sg", "nom", "ind"]);
+        // numerals: cardinals carry no number of their own; ordinals do
+        add("два", "два", &["num", "m", "nom", "ind"]);
+        add("два", "два", &["num", "nt", "nom", "ind"]);
+        add("две", "два", &["num", "f", "nom", "ind"]);
+        add("пет", "пет", &["num", "mfn", "nom", "ind"]);
+        add("двајца", "два", &["num", "ma", "nom", "ind"]);
+        add("втори", "втор", &["num", "mfn", "pl", "nom", "ind"]);
+        add("градови", "град", &["n", "m", "pl", "nom", "ind"]);
+        add("града", "град", &["n", "m", "pl", "nom", "ind"]);
+        add("града", "града", &["n", "f", "sg", "nom", "ind"]);
+        add("ученици", "ученик", &["n", "m", "pl", "nom", "ind"]);
+        add("села", "село", &["n", "nt", "pl", "nom", "ind"]);
+        // object doubling: first/third-person verbs, definite objects
+        add("видов", "вид", &["n", "m", "sg", "nom", "prx"]);
+        add("видов", "види", &["vblex", "perf", "tv", "aor", "p1", "sg"]);
+        add("видам", "види", &["vblex", "perf", "tv", "pres", "p1", "sg"]);
+        add("сакам", "сака", &["vblex", "impf", "tv", "pres", "p1", "sg"]);
+        add("спијам", "спие", &["vblex", "impf", "iv", "pres", "p1", "sg"]);
+        add("рече", "рече", &["vblex", "perf", "tv", "aor", "p3", "sg"]);
+        add("филмот", "филм", &["n", "m", "sg", "nom", "def"]);
+        add("децата", "дете", &["n", "nt", "pl", "nom", "def"]);
+        add("ноќта", "ноќ", &["n", "f", "sg", "nom", "def"]);
+        add("човекот", "човек", &["n", "m", "sg", "nom", "def"]);
+        add("да", "да", &["part"]);
+        add("учат", "учи", &["vblex", "impf", "tv", "pres", "p3", "pl"]);
+        add("ти", "clitic", &["prn", "pers", "clt", "p2", "mfn", "sg", "dat"]);
+        add("ти", "free", &["prn", "pers", "p2", "mfn", "sg", "nom"]);
+        add("дадов", "даде", &["vblex", "perf", "tv", "aor", "p1", "sg"]);
+        add("писмото", "писмо", &["n", "nt", "sg", "nom", "def"]);
         Morphology::from_bytes(&Morphology::build(&e).unwrap()).unwrap()
     }
 
@@ -1188,6 +1426,15 @@ mod tests {
     }
 
     #[test]
+    fn a_dative_clitic_is_not_mistaken_for_the_subject() {
+        // `Ти дадов писмото` = I gave you the letter: `ти` is the clitic.
+        assert!(run_rule("Ти дадов писмото.", rule::VERB_AGREEMENT).is_empty());
+        // ...and the object still needs its own clitic.
+        let found = run_rule("Ти дадов писмото.", rule::OBJECT_DOUBLING);
+        assert_eq!(found[0].suggestions, vec!["го дадов писмото".to_string()]);
+    }
+
+    #[test]
     fn non_finite_verbs_are_not_judged() {
         // `прави` in its verb reading is an imperative: no person, no verdict.
         assert!(run_rule("тој прави", rule::VERB_AGREEMENT).is_empty());
@@ -1266,6 +1513,69 @@ mod tests {
         assert_eq!(found.len(), 1, "{found:?}");
         assert_eq!(found[0].rule, rule::SPACE_BEFORE_PUNCT);
         assert_eq!(found[0].suggestions, vec![",".to_string()]);
+    }
+
+    #[test]
+    fn flags_dva_dve_against_the_nouns_gender() {
+        let found = run_rule("има два книги", rule::NUMERAL_GENDER);
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].suggestions, vec!["две книги".to_string()]);
+        let found = run_rule("Две градови", rule::NUMERAL_GENDER);
+        assert_eq!(found[0].suggestions, vec!["Два градови".to_string()]);
+    }
+
+    #[test]
+    fn numeral_gender_leaves_agreeing_and_neuter_pairs_alone() {
+        assert!(run_rule("две книги", rule::NUMERAL_GENDER).is_empty());
+        assert!(run_rule("два града", rule::NUMERAL_GENDER).is_empty());
+        // Neuter is not judged either way.
+        assert!(run_rule("две села", rule::NUMERAL_GENDER).is_empty());
+        assert!(run_rule("два села", rule::NUMERAL_GENDER).is_empty());
+    }
+
+    #[test]
+    fn flags_a_plain_plural_where_the_count_form_is_stored() {
+        let found = run_rule("пет градови", rule::COUNT_FORM);
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].severity, Severity::Warning);
+        assert_eq!(found[0].suggestions, vec!["пет града".to_string()]);
+    }
+
+    #[test]
+    fn count_form_is_never_invented() {
+        // No stored count form for person nouns, so nothing to propose.
+        assert!(run_rule("пет ученици", rule::COUNT_FORM).is_empty());
+        assert!(run_rule("пет града", rule::COUNT_FORM).is_empty());
+        // Ordinals and the personal numeral are not cardinals.
+        assert!(run_rule("втори градови", rule::COUNT_FORM).is_empty());
+        assert!(run_rule("двајца ученици", rule::COUNT_FORM).is_empty());
+    }
+
+    #[test]
+    fn flags_a_definite_object_without_its_clitic() {
+        let found = run_rule("Видов книгата.", rule::OBJECT_DOUBLING);
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].text, "Видов книгата");
+        assert_eq!(found[0].suggestions, vec!["Ја видов книгата".to_string()]);
+        let found = run_rule("тој рече да видам децата.", rule::OBJECT_DOUBLING);
+        assert_eq!(found[0].suggestions, vec!["ги видам децата".to_string()]);
+    }
+
+    #[test]
+    fn object_doubling_stays_silent_when_unsure() {
+        // Already doubled, with or without negation between.
+        assert!(run_rule("Ја видов книгата.", rule::OBJECT_DOUBLING).is_empty());
+        assert!(run_rule("Не го видов филмот.", rule::OBJECT_DOUBLING).is_empty());
+        // Third person: the noun may be the subject.
+        assert!(run_rule("Така рече човекот.", rule::OBJECT_DOUBLING).is_empty());
+        // Intransitive verb, time adverbial, indefinite object.
+        assert!(run_rule("Спијам ноќта.", rule::OBJECT_DOUBLING).is_empty());
+        assert!(run_rule("Сакам ноќта.", rule::OBJECT_DOUBLING).is_empty());
+        assert!(run_rule("Видов книга.", rule::OBJECT_DOUBLING).is_empty());
+        // The noun is the subject of a `да` clause.
+        assert!(run_rule("Сакам децата да учат.", rule::OBJECT_DOUBLING).is_empty());
+        // Punctuation between verb and noun.
+        assert!(run_rule("Видов, книгата.", rule::OBJECT_DOUBLING).is_empty());
     }
 
     #[test]

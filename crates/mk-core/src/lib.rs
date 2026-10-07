@@ -23,7 +23,11 @@ pub mod homoglyph;
 pub mod levenshtein;
 pub mod lexicon;
 pub mod morphology;
+// Parked, not wired into `check`: measured 0% recall against the shipped
+// bigram table (see docs/superpowers/specs/2026-09-21-real-word-context-design.md).
+// Agreement rules in `grammar` cover that error class instead.
 pub mod realword;
+pub mod serbianism;
 pub mod tokenizer;
 pub mod translit;
 
@@ -240,8 +244,27 @@ impl Checker {
             });
         }
 
-        // 3. Ordinary spelling.
-        if self.lexicon.contains(word) {
+        // 3. Serbian words. Unlisted ones would get edit-distance suggestions
+        // that miss the Macedonian word entirely; the few the upstream
+        // wordlist carries as colloquial borrowings get a quiet style note.
+        let known = self.lexicon.contains(word);
+        if let Some(mk) = serbianism::macedonian_for(&word.to_lowercase()) {
+            // A capitalised known word is more likely a name (`Данас`).
+            if !(known && word.starts_with(char::is_uppercase)) {
+                return Some(Diagnostic {
+                    rule: rule::SERBIANISM.to_string(),
+                    severity: if known { Severity::Info } else { Severity::Warning },
+                    char_start: start,
+                    char_end: end,
+                    text: word.to_string(),
+                    message: format!("Српски збор; на македонски: {mk}."),
+                    suggestions: vec![grammar::match_case(word, mk)],
+                });
+            }
+        }
+
+        // 4. Ordinary spelling.
+        if known {
             return None;
         }
         if self.is_known_compound(word) {
@@ -554,6 +577,25 @@ mod tests {
         let sliced: String = text.chars().skip(d.char_start).take(d.char_end - d.char_start).collect();
         assert_eq!(sliced, d.text);
         assert_eq!(d.text, "видe"); // trailing 'e' is Latin
+    }
+
+    #[test]
+    fn serbian_words_get_the_macedonian_word_as_the_fix() {
+        let found = checker().check("Увек");
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].rule, rule::SERBIANISM);
+        assert_eq!(found[0].severity, Severity::Warning);
+        assert_eq!(found[0].suggestions, vec!["Секогаш".to_string()]);
+    }
+
+    #[test]
+    fn known_serbian_borrowings_are_a_style_note_not_an_error() {
+        let c = Checker::new(Lexicon::build_from_unsorted(["можда", "тој"]).unwrap()).unwrap();
+        let found = c.check("тој можда");
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].severity, Severity::Info);
+        // Capitalised and known: more likely a name than a borrowing.
+        assert!(c.check("Можда").is_empty());
     }
 
     #[test]

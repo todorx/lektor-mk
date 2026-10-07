@@ -1,14 +1,17 @@
-# Real-word / agreement gate. Tab-separated:
+# Grammar gate: precision on correct text, recall on injected errors. Tab-separated:
 #   correct <TAB> perturbed <TAB> wrong_token <TAB> family
 #
 # The left column is also the precision set: every line is correct Macedonian
 # and nothing should be flagged on it. The middle column injects exactly one
 # error, and `wrong_token` is the word that must be pointed at.
 #
-# family=agree  the error is agreement; a hit means some rule flagged
-#               `wrong_token`. Target rows for the agreement rules.
+# family=<name> a hit means some rule flagged `wrong_token`. Names in use:
+#               agree, numeral, count, object, serb.
 # family=-      known to be uncovered (tense and mood, not agreement). Listed
 #               so the gap is visible rather than implied.
+# family=clean  precision only: the left column must stay silent, the other
+#               columns are `-`. First-person, colloquial and VS-order prose,
+#               which the Wikipedia sample barely contains.
 #
 # These are seed rows, not a coverage claim. Keep every row honest: if the left
 # column is not actually correct, the precision number is meaningless.
@@ -28,3 +31,33 @@
 Ние одиме дома.	Ние одиш дома.	одиш	agree
 Тој гледа телевизија.	Тој гледаат телевизија.	гледаат	agree
 Тие пишуваат писмо.	Тие пишува писмо.	пишува	agree
+Купив две книги.	Купив два книги.	два	numeral
+Имаме две маси.	Имаме два маси.	два	numeral
+Чекав пет дена.	Чекав пет денови.	денови	count
+Посетив три града.	Посетив три градови.	градови	count
+Го купив весникот.	Купив весникот.	Купив	object
+Ги гледам децата секој ден.	Гледам децата секој ден.	Гледам	object
+Ја платив сметката.	Платив сметката.	Платив	object
+Го чекам автобусот.	Чекам автобусот.	Чекам	object
+Ти го дадов писмото.	Ти дадов писмото.	дадов	object
+Секогаш доаѓа навреме.	Увек доаѓа навреме.	Увек	serb
+Утре ќе одам на пазар.	Сутра ќе одам на пазар.	Сутра	serb
+Купив леб и млеко.	Купив хлеб и млеко.	хлеб	serb
+Тоа е точно.	Тоа е тачно.	тачно	serb
+Каде си сега?	Где си сега?	Где	serb
+Работев цела ноќ.	-	-	clean
+Го поминав викендот дома.	-	-	clean
+Така рече професорот.	-	-	clean
+Сакам децата да бидат среќни.	-	-	clean
+Ти благодарам за помошта.	-	-	clean
+Мислам дека е точно.	-	-	clean
+Дојдов вчера во градот.	-	-	clean
+Читам книга секоја вечер.	-	-	clean
+Ние живееме во Скопје.	-	-	clean
+Вие ја знаете вистината.	-	-	clean
+Тие ги купија билетите.	-	-	clean
+Имам две сестри и два брата.	-	-	clean
+Пет години живеев во Охрид.	-	-	clean
+Тој ми ја даде книгата.	-	-	clean
+Работев ноќта, а спиев утрото.	-	-	clean
+Ти дојде ли вчера?	-	-	clean

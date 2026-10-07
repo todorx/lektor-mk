@@ -13,8 +13,8 @@ const {
 
 const diag = (rule, text) => ({ rule, text, severity: "error", message: "m", suggestions: [] });
 
-// 1. Catalogue integrity: 15 unique engine IDs in known groups.
-assert.strictEqual(MK_RULES.length, 15, "rule catalogue size");
+// 1. Catalogue integrity: 19 unique engine IDs in known groups.
+assert.strictEqual(MK_RULES.length, 19, "rule catalogue size");
 assert.deepStrictEqual(
   MK_RULES.map((r) => r.id).sort(),
   [
@@ -22,12 +22,21 @@ assert.deepStrictEqual(
     "MK_FOREIGN_CYRILLIC", "MK_HOMOGLYPH", "MK_L_PARTICIPLE", "MK_LATIN_TEXT",
     "MK_NAJ_SEPARATED", "MK_NE_FUSED", "MK_PO_SEPARATED", "MK_SENTENCE_CAPITAL",
     "MK_SPACE_BEFORE_PUNCT", "MK_SPELL", "MK_VERB_AGREEMENT",
+    "MK_NUMERAL_GENDER", "MK_COUNT_FORM", "MK_OBJECT_DOUBLING", "MK_SERBIANISM",
   ].sort()
 );
 for (const r of MK_RULES) {
   assert.ok(MK_GROUPS.includes(r.group), "known group for " + r.id);
   assert.ok(r.name && r.desc, "name+desc for " + r.id);
 }
+
+// 1b. The catalogue is the engine's rule list, no more, no less.
+const engineIds = [
+  ...require("node:fs")
+    .readFileSync(require("node:path").join(__dirname, "../crates/mk-core/src/diagnostic.rs"), "utf8")
+    .matchAll(/pub const \w+: &str = "(MK_\w+)";/g),
+].map((m) => m[1]);
+assert.deepStrictEqual(MK_RULES.map((r) => r.id).sort(), engineIds.sort(), "catalogue matches diagnostic.rs");
 
 // 2. Defaults pass everything.
 const all = [diag("MK_SPELL", "книгаа"), diag("MK_DATIVE_I", "и")];

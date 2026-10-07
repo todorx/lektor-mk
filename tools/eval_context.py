@@ -1,10 +1,10 @@
-"""Gate for the agreement rules: precision on correct text, recall on slips.
+"""Gate for the grammar rules: precision on correct text, recall on slips.
 
 Usage: python tools/eval_context.py data/mk.fst data/mk.morph
 
 Reads tools/context_probe.tsv (correct TAB perturbed TAB wrong_token TAB family).
-The correct column must produce nothing; each row whose family is `agree` must
-produce a diagnostic naming the wrong token. ASCII output only, so a Windows
+The correct column must produce nothing; each row with a named family (not
+`-`, not `clean`) must produce a diagnostic naming the wrong token. ASCII output only, so a Windows
 console never has to render Cyrillic.
 
 The bigram/frequency tables are deliberately not needed: agreement is a
@@ -63,8 +63,8 @@ def main():
     # Precision: the correct column must be silent.
     fps = check([r[0] for r in probe], fst, morph)
 
-    targets = [r for r in probe if r[3] == "agree"]
-    uncovered = [r for r in probe if r[3] != "agree"]
+    targets = [r for r in probe if r[3] not in ("-", "clean")]
+    uncovered = [r for r in probe if r[3] == "-"]
     hits, misses = 0, []
     for correct, perturbed, wrong, _ in targets:
         found = check([perturbed], fst, morph)
@@ -75,7 +75,7 @@ def main():
             misses.append(asciistr(wrong) + "(" + got + ")")
 
     pct = 100.0 * hits / max(len(targets), 1)
-    print(f"rows={len(probe)} agreement={len(targets)} uncovered={len(uncovered)}")
+    print(f"rows={len(probe)} targets={len(targets)} uncovered={len(uncovered)}")
     print(f"false_positives={len(fps)} hits={hits} recall={pct:.0f}%")
     if fps:
         print("false_positive_detail=" + ",".join(
