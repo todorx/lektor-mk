@@ -18,7 +18,7 @@ mk — Macedonian spelling checker
 
 USAGE:
     mk build-lexicon <wordlist.txt>... <out.fst>
-    mk build-morph <morph.tsv> <out.morph>
+    mk build-morph <morph.tsv>... <out.morph>
     mk build-freq <freq.tsv> <out.freq>
     mk build-bigram <bigrams.tsv> <out.bigram>
     mk analyze <morph> <word>...
@@ -106,11 +106,16 @@ fn build_lexicon(args: &[String]) -> Result<bool, String> {
 
 /// Compile the TSV produced by `tools/expand_apertium.py` into a morphology blob.
 fn build_morph(args: &[String]) -> Result<bool, String> {
-    let [input, output] = args else {
-        return Err(format!("build-morph needs an input and an output path\n\n{USAGE}"));
+    let Some((output, inputs)) = args.split_last().filter(|(_, inputs)| !inputs.is_empty()) else {
+        return Err(format!("build-morph needs input paths and an output path\n\n{USAGE}"));
     };
 
-    let text = std::fs::read_to_string(input).map_err(|e| format!("reading {input}: {e}"))?;
+    let mut text = String::new();
+    for input in inputs {
+        text += &std::fs::read_to_string(input).map_err(|e| format!("reading {input}: {e}"))?;
+        text.push('\n');
+    }
+    let input = inputs.join(", ");
     let mut entries: BTreeMap<String, Vec<(String, Vec<String>)>> = BTreeMap::new();
     let mut rows = 0usize;
 
