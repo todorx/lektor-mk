@@ -34,13 +34,13 @@ Honest measurements, not marketing. Live Wikipedia sample, reproducible via `too
 
 | | |
 |---|---|
-| Lexicon | 880,826 forms → **1.50 MB** FST (16.7× smaller than the raw list) |
+| Lexicon | 883,326 forms → **1.51 MB** FST (16.7× smaller than the raw list) |
 | Morphology | 161,953 forms, 30,380 lemmas → **2.65 MB** |
 | Frequencies | 40,000 words ex Macedonian Wikipedia → **0.86 MB** (`mk.freq`, optional) |
 | Bigrams | 50,000 pairs ex Macedonian Wikipedia → **1.47 MB** (`mk.bigram`, optional) |
 | Extension total | FST + morph + freq → **5.0 MB**, + bigram → **6.5 MB**, still local-only and offline |
 | Throughput | 17,782 words in **0.95 s** |
-| Flag rate on Macedonian Wikipedia | **1.49%** over 17,104 words (down from 5.13%: the gazetteer took it to 2.79%, Wiktionary forms to 1.49%) |
+| Flag rate on Macedonian Wikipedia | **1.40%** over 17,111 words (down from 5.13%: the gazetteer took it to 2.79%, Wiktionary forms to 1.49%, reviewed corpus forms to 1.40%) |
 | Typos still caught | 92.4% of 2,446 single-edit typos of frequent words (`tools/eval_typos.py`); was 93.1% before the Wiktionary forms |
 | Morphology coverage | 83.5% of tokens; 70.6% of adjacent pairs |
 | Grammar on Wikipedia | 4 `MK_L_PARTICIPLE` + 3 `MK_SPACE_BEFORE_PUNCT` + 2 `MK_ADJ_AGREEMENT` hits (all verified true), 0 everywhere else |
@@ -117,6 +117,7 @@ cargo run --release -p mk-cli -- build-lexicon \
     data/interim/mk_wordlist.utf8.txt \
     data/supplement/mk_supplement.txt \
     data/supplement/mk_names.txt \
+    data/supplement/mk_corpus_forms.txt \
     data/interim/mk_apertium_forms.txt \
     data/interim/mk_wiktionary_forms.txt \
     data/mk.fst                                                  # compile the lexicon
@@ -136,13 +137,13 @@ python tools/eval_context.py data/mk.fst data/mk.morph            # grammar gate
 
 `tools/context_probe.tsv` is the grammar gate: correct sentences that must stay silent (including first-person and colloquial prose, which Wikipedia barely contains) and the same sentences with one injected error that must be caught. It is hand-written, so its recall figure measures the rules against known targets, not against real-world error rates.
 
-Find words the lexicon is missing, from any corpus you have (plain text or a MediaWiki XML dump such as `mkwikisource-latest-pages-articles.xml.bz2`):
+Find words the lexicon is missing, from any corpus you have (plain text, a MediaWiki XML dump such as `mkwikisource-latest-pages-articles.xml.bz2`, or a CLASSLA-web VERT file, `.vert.gz` or the 2.0 `.vert.tar.gz`):
 
 ```bash
 python tools/mine_gaps.py corpus.txt [more.xml.bz2 ...]            # -> data/interim/gap_candidates.tsv
 ```
 
-The output is a ranked review list, never an automatic import: proper nouns go to the gazetteer, missing lemmas to the Apertium paradigms, and only whole categories to `data/supplement/`.
+The output is a ranked review list, never an automatic import. Reviewed keeps go to `data/supplement/mk_corpus_forms.txt` (2,500 forms so far, 488 of them names: every candidate seen 300+ times in CLASSLA-web.mk 1.0 and the mkwiki, mkwikisource and mkwikibooks dumps, or 600+ times once CLASSLA-web.mk 2.0 is added), rejects to `tools/gap_rejected.txt` (Serbianisms, dialect, typos, diacritic-less spellings, fragments) so they are never proposed again. Serbianisms with a clear Macedonian equivalent also go to `MK_SERBIANISM`. Missing lemmas still belong in the Apertium paradigms, which would bring their whole inflection.
 
 ## What it currently catches
 
@@ -183,6 +184,7 @@ Every source, what it is used for, and under what terms. Only counts and curated
 | [kaikki.org](https://kaikki.org/dictionary/Macedonian/) Wiktextract of English Wiktionary (Ylonen, LREC 2022) | Inflected forms for the spelling lexicon (`expand_wiktionary.py`) | CC BY-SA 4.0 / GFDL |
 | MK Wikipedia article dump (`mkwiki-latest-pages-articles`) | Word/bigram counts only (top 40k unigrams, top 50k pairs) | CC BY-SA 4.0 (counts ship, text never ships) |
 | MK Wikipedia title dump (`mkwiki-latest-all-titles-in-ns0`) | Proper-noun gazetteer (`mk_names.txt`), reviewed before commit | CC BY-SA 4.0 |
+| [CLASSLA-web.mk 1.0](https://hdl.handle.net/11356/1932) / [2.0](https://hdl.handle.net/11356/2079) (Ljubešić et al.), mkwiki/mkwikisource/mkwikibooks dumps | Gap-mining counts; reviewed forms in `mk_corpus_forms.txt` | CC0 / CC BY-SA 4.0 (single words ship, text never ships) |
 | Curated `data/supplement/` | Hand-reviewed gap fills (accents, abbreviations, compounds) | Same as this project |
 
 The base dictionary is GPL-2.0, so this project is **GPL-3.0-or-later** (see [LICENSE](LICENSE)).
